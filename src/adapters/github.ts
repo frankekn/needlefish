@@ -10,7 +10,7 @@ import {
 	type PriorFate,
 	type PriorFateCounts,
 } from "../shared/render.js";
-import { ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } from "../shared/repo.js";
+import { changedFiles, ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } from "../shared/repo.js";
 import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
@@ -157,6 +157,17 @@ function ghPost(args: readonly string[], rawInput?: string): unknown {
 function stringField(raw: JsonRecord, field: string): string {
 	const value = raw[field];
 	return typeof value === "string" ? value : "";
+}
+
+// Same merge-base and changed-file list the bundle uses. Any git failure
+// counts as not docs-only, so the caller keeps its credential error.
+function docsOnlyHead(repoPath: string, baseSha: string, headSha: string): boolean {
+	if (!baseSha) return false;
+	try {
+		return isDocsOnlyFastPath({ changedFiles: changedFiles(repoPath, git(["merge-base", baseSha, headSha], repoPath), headSha) });
+	} catch {
+		return false;
+	}
 }
 
 function nestedString(
@@ -1711,10 +1722,15 @@ export async function runGithub(
 		return;
 	}
 
-	// A broken connection setup fails here, before a check exists, so it does
-	// not spend a recovery round. Credentials bind after collection, where
-	// the docs-only fast path is known.
+	// Connection parse, selection and credential errors fail here, before a
+	// check exists, so they do not spend a recovery round. A docs-only head
+	// never reaches a runner, so missing credentials do not stop it.
 	resolveConnectionOptions(opts, repoPath, process.env, false);
+	try {
+		resolveConnectionOptions(opts, repoPath, process.env, true);
+	} catch (error) {
+		if (!docsOnlyHead(repoPath, process.env.PR_BASE_SHA || nestedString(pr, "base", "sha"), headSha)) throw error;
+	}
 	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;

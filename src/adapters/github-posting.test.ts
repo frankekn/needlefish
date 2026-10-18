@@ -4934,6 +4934,43 @@ test("connection setup failures leave the automatic recovery budget intact", (t)
 	assert.deepEqual(failedAttemptPosts, []);
 });
 
+test("missing connection credentials leave the automatic recovery budget intact", (t) => {
+	const fixture = setupFixture(t, { prNumber: 248, rawReview: defaultRawReview() });
+	const root = path.dirname(fixture.repo);
+	const agent = path.join(root, "agent.cjs");
+	writeFileSync(agent, `
+const fs = require("node:fs");
+fs.appendFileSync(process.argv[2], "acp\\n");
+const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+	const request = JSON.parse(line);
+	if (request.method === "initialize") send({ id: request.id, result: { protocolVersion: 1, agentCapabilities: {}, authMethods: [] } });
+	if (request.method === "session/new") send({ id: request.id, result: { sessionId: "s" } });
+	if (request.method === "session/prompt") {
+		send({ method: "session/update", params: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: process.argv[3] } } } });
+		send({ id: request.id, result: { stopReason: "end_turn", usage: { totalTokens: 3, inputTokens: 2, outputTokens: 1 } } });
+	}
+});
+`);
+	const connections = path.join(root, "connections.json");
+	writeFileSync(connections, JSON.stringify({ version: 1, connections: [{
+		id: "selected", adapter: "acp", launch: { command: process.execPath, args: [agent, fixture.runnerLog, defaultRawReview()] },
+		auth: { env: { AGENT_API_KEY: "POSTING_TEST_AGENT_KEY" } },
+	}] }));
+	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", connections);
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const run = spawnGithubCli(fixture, 248, ["--connection", "selected"]);
+		assert.equal(run.status, 1, run.stderr);
+		assert.match(run.stderr, /Selected connection credential is missing/);
+	}
+	const failedAttemptPosts = readPosts(fixture.postLog);
+	setEnvForTest(t, "POSTING_TEST_AGENT_KEY", "test-agent-key");
+	const repaired = spawnGithubCli(fixture, 248, ["--connection", "selected"]);
+	assert.doesNotMatch(repaired.stderr, /recovery limit/i);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.deepEqual(failedAttemptPosts, []);
+});
+
 for (const postFailure of ["none", "stored", "not-stored"] as const) {
 	test(`review pre-read failure attempts one POST with ${postFailure} failure`, (t) => {
 		const fixture = setupFixture(t, { prNumber: 147, rawReview: defaultRawReview(), failReviewPreRead: true,
