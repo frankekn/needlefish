@@ -43,6 +43,7 @@ import {
 } from "../shared/schema.js";
 import { normalizeFinding, normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
+import { CRITIC_OUTPUT_SCHEMA } from "./critic-output-schema.js";
 import { checkQuotes } from "./quote-check.js";
 import { collectLargeLiteralContext, hotspotLiteralContext, type LargeLiteralContext } from "./large-literal-context.js";
 import { deriveVerdict } from "./verdict.js";
@@ -128,6 +129,7 @@ interface PromptSpec<T> extends ReviewPass {
 	readonly prompt: string;
 	readonly parse: (raw: unknown) => T;
 	readonly maxAttempts?: 3;
+	readonly codexOutputSchema?: CodexOptions["codexOutputSchema"];
 }
 
 interface PromptResult<T> extends ReviewTraceProvenance {
@@ -371,17 +373,20 @@ async function runJsonPrompt<T>(
 		try {
 			out = await runCodex(
 				spec.prompt,
-				codexOptions(run, spec.label, {
-					passKind: spec.passKind,
-					passIndex: spec.passIndex,
-					promptAttempt,
-					onSuccessfulRaw: (content, runnerAttempt) => {
-						successfulRunnerAttempt = runnerAttempt;
-						if (run.onTrace) {
-							successfulRaws.push({ content, runnerAttempt });
-						}
-					},
-				}),
+				{
+					...codexOptions(run, spec.label, {
+						passKind: spec.passKind,
+						passIndex: spec.passIndex,
+						promptAttempt,
+						onSuccessfulRaw: (content, runnerAttempt) => {
+							successfulRunnerAttempt = runnerAttempt;
+							if (run.onTrace) {
+								successfulRaws.push({ content, runnerAttempt });
+							}
+						},
+					}),
+					...(spec.codexOutputSchema ? { codexOutputSchema: spec.codexOutputSchema } : {}),
+				},
 			);
 		} catch (err) {
 			attachRunEvidence(err, run);
@@ -591,6 +596,7 @@ async function runCritic(
 			passKind: "critic",
 			passIndex: 0,
 			maxAttempts: 3,
+			...(run.runnerConfig.runner === "codex" ? { codexOutputSchema: CRITIC_OUTPUT_SCHEMA } : {}),
 			parse: (raw: unknown) =>
 				parseCriticReview(raw, candidates, candidate),
 		},

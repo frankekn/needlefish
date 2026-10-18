@@ -543,6 +543,7 @@ export function prepareEphemeralHome(
 export type RunnerDiagnostic = "unrecognized_codex_event_schema";
 
 export interface CodexOptions extends RunnerOptions {
+	readonly codexOutputSchema?: Readonly<Record<string, unknown>>;
 	readonly effectiveConfig?: EffectiveRunnerConfig;
 	readonly outputGuards?: readonly ConnectionOutputGuard[];
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
@@ -597,6 +598,7 @@ interface RunnerAttemptResult {
 }
 
 interface RunnerInvocation {
+	readonly codexOutputSchema?: CodexOptions["codexOutputSchema"];
 	readonly codexCommand?: string;
 	readonly acpLaunch?: AcpLaunchSpec;
 	readonly initializeTimeoutMs: number;
@@ -852,6 +854,7 @@ async function runCodexOnce(
 					sandbox,
 					invocation: {
 						...(codexCommand ? { codexCommand } : {}),
+						...(opts.codexOutputSchema ? { codexOutputSchema: opts.codexOutputSchema } : {}),
 						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
 						initializeTimeoutMs: config.acpInitializeTimeoutMs,
 						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
@@ -1481,6 +1484,11 @@ async function runCodexCli(
 		"--output-last-message",
 		lastMsg,
 	];
+	if (invocation.codexOutputSchema) {
+		const schemaPath = path.join(invocation.tmp, "critic-output.schema.json");
+		writeFileSync(schemaPath, JSON.stringify(invocation.codexOutputSchema), { mode: 0o600, flag: "wx" });
+		args.push("--output-schema", schemaPath);
+	}
 	if (invocation.codexProxyBaseUrl !== undefined) {
 		const provider = "model_providers.cliproxyapi";
 		args.push(
