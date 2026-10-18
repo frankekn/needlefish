@@ -134,7 +134,7 @@ function inSnapshot(location: Location, reviewer: ReviewerInput, lineCounts: Map
 function atGold(actual: Location, accepted: Location): boolean {
   return actual.path === accepted.path && actual.side === accepted.side && actual.start >= accepted.start && actual.end <= accepted.end;
 }
-function allocate(findings: Finding[], gold: Gold[], judgments: Adjudication[]): { findingId: string; goldId: string }[] {
+function allocate(findings: Finding[], gold: Gold[], judgments: Adjudication[]) {
   const assigned = new Map<string, string>();
   const byGold = new Map(gold.map((g) => [g.id, g]));
   const byFinding = new Map(judgments.map((a) => [a.findingId, a]));
@@ -152,12 +152,15 @@ function allocate(findings: Finding[], gold: Gold[], judgments: Adjudication[]):
     return false;
   }
   for (const finding of findings) assign(finding.id, new Set());
-  return [...assigned].map(([goldId, findingId]) => ({ findingId, goldId }));
+  return {
+    matches: [...assigned].map(([goldId, findingId]) => ({ findingId, goldId })),
+    candidateFindingIds: new Set([...candidates].filter(([, ids]) => ids.length > 0).map(([findingId]) => findingId)),
+  };
 }
 
 export function scoreProductResults(manifest: ExternalManifest, evaluator: Evaluator, results: ProductResults, repo?: string) {
   const admitted = importManifest(manifest, repo);
-  const identity = { schemaVersion: 1, rubric: "external-description-location-v1", instanceId: manifest.source.instanceId, product: results.product, binding: results.binding, evaluator: evaluator.independent, evaluatorSHA256: sha256(JSON.stringify(evaluator)), resultsSHA256: sha256(JSON.stringify(results)) };
+  const identity = { schemaVersion: 1, rubric: "external-description-location-v2", instanceId: manifest.source.instanceId, product: results.product, binding: results.binding, evaluator: evaluator.independent, evaluatorSHA256: sha256(JSON.stringify(evaluator)), resultsSHA256: sha256(JSON.stringify(results)) };
   if (admitted.status === "excluded") return { ...identity, status: "excluded", reasons: admitted.reasons, attempts: results.attempts.map((a) => ({ id: a.id, attemptSHA256: attemptSHA256(a), status: "excluded", originalStatus: a.status, ...(a.status === "completed" ? {} : { originalReason: a.reason }), metrics: null })) };
   const expected = sourceBinding(manifest, admitted.reviewer);
   if (!sameBinding(results.binding, expected) || !sameBinding(evaluator.binding, expected)) throw new Error("source_identity_mismatch");
@@ -180,16 +183,17 @@ export function scoreProductResults(manifest: ExternalManifest, evaluator: Evalu
     const findings = normalizeFindings(attempt);
     const judgments = evaluator.attempts.find((a) => a.id === attempt.id)?.adjudications ?? [];
     if (findings.some((f) => !judgments.some((a) => a.findingId === f.id))) return { ...attemptIdentity, status: "unscorable", reason: "incomplete_independent_adjudication", metrics: null };
-    const matches = allocate(findings, gold.findings, judgments);
-    const unmatched = findings.filter((f) => !matches.some((m) => m.findingId === f.id));
+    const { matches, candidateFindingIds } = allocate(findings, gold.findings, judgments);
+    const duplicate = candidateFindingIds.size - matches.length;
+    const unmatched = findings.filter((f) => !candidateFindingIds.has(f.id));
     const falsePositive = unmatched.filter((f) => judgments.find((a) => a.findingId === f.id)?.unmatched === "false_positive").length;
     const legitimateUnmatched = unmatched.filter((f) => judgments.find((a) => a.findingId === f.id)?.unmatched === "legitimate").length;
     const unresolved = unmatched.length - falsePositive - legitimateUnmatched;
     const actionable = matches.length + legitimateUnmatched;
     return { ...attemptIdentity, status: "completed", matches, metrics: {
-      matched: matches.length, missed: gold.findings.length - matches.length, falsePositive, legitimateUnmatched, unresolved,
+      matched: matches.length, missed: gold.findings.length - matches.length, duplicate, falsePositive, legitimateUnmatched, unresolved,
       findingCount: findings.length, goldCount: gold.findings.length,
-      recall: { numerator: matches.length, denominator: gold.findings.length, value: gold.findings.length && unresolved === 0 ? matches.length / gold.findings.length : null },
+      recall: { numerator: matches.length, denominator: gold.findings.length, value: gold.findings.length ? matches.length / gold.findings.length : null },
       precision: { numerator: actionable, denominator: findings.length, value: findings.length && unresolved === 0 ? actionable / findings.length : null },
     } };
   });
