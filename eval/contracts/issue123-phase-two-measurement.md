@@ -151,9 +151,13 @@ evidence that labels were fixed before the first model call. Without that
 evidence, this library result does not establish independent blind validation.
 
 The existing negative false-positive draw proxy remains unchanged when an
-oracle is supplied. If an independently actionable finding occurs in a negative
-draw flagged `score.falsePositive`, the evaluator records the exact fixture and
-draw conflict in `reasons` and prevents eligibility even with permissive floors.
+oracle is supplied. If an independently actionable finding itself violates a
+negative fixture's `mustNotFind` or `noBlockingFindings` rule and its draw is
+flagged `score.falsePositive`, the evaluator records the exact fixture and draw
+conflict in `reasons` and prevents eligibility even with permissive floors.
+The scorer and oracle share the same per-finding predicate. An unrelated
+false-positive finding does not turn a permitted actionable finding into a
+conflict. A P3 can still conflict when it matches `mustNotFind`.
 It preserves both measured rates and the original report scores. Resolve that
 conflicting source truth independently before another campaign; do not rewrite
 historical scores or convert the existing result into a pass.
@@ -219,8 +223,10 @@ invalid output still prevents measurement eligibility.
 The new artifact has `status: "measurement_only"`. It contains the unchanged
 Phase 2 evaluator result, raw SHA-256 for each input, parsed-value oracle
 identity, policy identity, declared report source SHA and a digest inventory of
-the evaluator implementation files. The digest inventory identifies those
-files, not a full Git tree or authenticated campaign source. The artifact is
+selected evaluator implementation files. `evaluatorSource.files` lists those
+files explicitly. Its combined digest covers only that selected inventory,
+not the complete import closure, a full implementation fingerprint, a full Git
+tree, or authenticated campaign source. The artifact is
 not a release `QualificationProof`, public leaderboard admission or merge
 permission. A self-declared matching source SHA does not authenticate a report.
 

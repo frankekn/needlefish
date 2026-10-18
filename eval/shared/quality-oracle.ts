@@ -2,6 +2,7 @@ import Ajv from "ajv";
 import { createHash } from "node:crypto";
 import { fixtureSetSha256 } from "./fixture-catalog";
 import type { QualityRate } from "./qualification";
+import { isFalsePositiveFinding } from "./score";
 import type { DrawFinding, FixtureSpec, Report } from "./types";
 
 type Campaign = { readonly broad: Report; readonly deep: Report };
@@ -111,7 +112,7 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
   let actionable = 0;
   let calibrated = 0;
   let labeled = 0;
-  const negativeIds = new Set(specs.filter((spec) => spec.kind === "negative").map((spec) => spec.id));
+  const negativeExpected = new Map(specs.filter((spec) => spec.kind === "negative").map((spec) => [spec.id, spec.expected]));
   const diagnostics = new Set<string>();
   let incomplete = false;
   for (const draw of draws) {
@@ -128,7 +129,8 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
           labeled++;
           if (accepted.includes(finding.severity)) calibrated++;
         }
-        if (negativeIds.has(draw.fixtureId) && draw.score.falsePositive) {
+        const expected = negativeExpected.get(draw.fixtureId);
+        if (expected && draw.score.falsePositive && isFalsePositiveFinding(finding, expected)) {
           diagnostics.add(`independent actionable finding conflicts with negative false-positive proxy: ${draw.fixtureId} draw ${draw.draw}`);
         }
       }
