@@ -4,7 +4,7 @@ import test from "node:test";
 import type { Finding } from "../../src/shared/schema";
 import { score, drawFindings } from "./score";
 import { evaluatePhaseTwoQualification, type PhaseTwoQualificationPolicy } from "./qualification";
-import { fixtureSetSha256 } from "./fixture-catalog";
+import { fixtureSetHash, fixtureSetSha256 } from "./fixture-catalog";
 import { phaseTwoOracleIdentity } from "./quality-oracle";
 import type { DrawResult, FixtureSpec, Report } from "./types";
 
@@ -441,4 +441,18 @@ test("Phase 2 independent actionable negatives retain legacy scores and block co
   assert.deepEqual(result.reasons, ["independent actionable finding conflicts with negative false-positive proxy: negative draw 0"]);
   assert.equal(result.eligible, false);
   assert.equal(JSON.stringify(source), before);
+});
+
+
+test("Phase 2 oracle rejects family regrouping that would repair an invalid fixture plan", () => {
+  const source = campaign();
+  const collapsed = specs.map((spec) => ({ ...spec, defectClass: "one-family" }));
+  const oracle = { ...independentOracle(source), identity: phaseTwoOracleIdentity(source, collapsed) };
+  assert.equal(fixtureSetHash(collapsed), fixtureSetHash(specs));
+  assert.equal(fixtureSetSha256(collapsed), fixtureSetSha256(specs));
+  const original = evaluatePhaseTwoQualification(source, collapsed, configuredPolicy, oracle);
+  assert.equal(original.eligible, false);
+  assert.deepEqual(original.reasons, ["need at least 5 Tier-1 defect families (found 1)"]);
+  assert.equal(evaluatePhaseTwoQualification(source, specs, configuredPolicy, independentOracle(source)).eligible, true);
+  assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, oracle), /identity mismatch: fixtureScoringSha256/);
 });
