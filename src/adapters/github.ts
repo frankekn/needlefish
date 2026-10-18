@@ -1,6 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { review, reviewPlan } from "../core/review.js";
+import { isDocsOnlyFastPath, review } from "../core/review.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
 	priorFateParts,
@@ -1637,7 +1637,7 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
-	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle));
 	const pendingCheckId = createPendingCheck(repo, headSha);
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
