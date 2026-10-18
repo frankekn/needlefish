@@ -1,5 +1,6 @@
 import Ajv from "ajv";
 import { createHash } from "node:crypto";
+import { fixtureSetSha256 } from "./fixture-catalog";
 import type { QualityRate } from "./qualification";
 import type { DrawFinding, FixtureSpec, Report } from "./types";
 
@@ -28,7 +29,7 @@ export interface PhaseTwoQualityOracle {
 
 export function phaseTwoOracleIdentity(campaign: Campaign, specs: readonly FixtureSpec[]) {
   const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-  return { broadSha256: digest(campaign.broad), deepSha256: digest(campaign.deep), fixtureSetSha256: digest(specs) };
+  return { broadSha256: digest(campaign.broad), deepSha256: digest(campaign.deep), fixtureSetSha256: fixtureSetSha256(specs) };
 }
 
 const text = { type: "string", minLength: 1, pattern: "\\S" };
@@ -56,11 +57,14 @@ const validate = ajv.compile<PhaseTwoQualityOracle>(object({
 }));
 
 export function measureIndependentQuality(campaign: Campaign, specs: readonly FixtureSpec[], input?: unknown): {
-  actionablePrecision: QualityRate; severityCalibration: QualityRate;
+  actionablePrecision: QualityRate; severityCalibration: QualityRate; severityLabelCoverage: QualityRate;
+  diagnostics: readonly string[];
 } {
   if (input === undefined) return {
     actionablePrecision: { status: "unknown", reason: "independent actionable TP/FP adjudication is absent" },
     severityCalibration: { status: "unknown", reason: "gold severity labels are absent" },
+    severityLabelCoverage: { status: "unknown", reason: "gold severity labels are absent" },
+    diagnostics: [],
   };
   if (!validate(input)) throw new Error(`invalid Phase 2 quality oracle: ${ajv.errorsText(validate.errors)}`);
   const identity = phaseTwoOracleIdentity(campaign, specs);
@@ -101,8 +105,10 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
   let total = 0;
   let actionable = 0;
   let calibrated = 0;
+  let labeled = 0;
+  const negativeIds = new Set(specs.filter((spec) => spec.kind === "negative").map((spec) => spec.id));
+  const diagnostics = new Set<string>();
   let incomplete = false;
-  let missingGold = false;
   for (const draw of draws) {
     if (draw.findings === undefined) incomplete = true;
     for (const [findingIndex, finding] of (draw.findings ?? []).entries()) {
@@ -113,8 +119,13 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
       } else if (row.decision === "actionable") {
         actionable++;
         const accepted = labels.get(JSON.stringify([row.fixtureId, row.defectId]));
-        if (!accepted) missingGold = true;
-        else if (accepted.includes(finding.severity)) calibrated++;
+        if (accepted) {
+          labeled++;
+          if (accepted.includes(finding.severity)) calibrated++;
+        }
+        if (negativeIds.has(draw.fixtureId) && draw.score.falsePositive) {
+          diagnostics.add(`independent actionable finding conflicts with negative false-positive proxy: ${draw.fixtureId} draw ${draw.draw}`);
+        }
       }
     }
   }
@@ -123,9 +134,13 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
     actionablePrecision: incomplete ? unknown : total === 0
       ? { status: "unknown", reason: "no emitted findings" }
       : { status: "measured", value: actionable / total, numerator: actionable, denominator: total },
-    severityCalibration: incomplete ? unknown : missingGold
-      ? { status: "unknown", reason: "missing independently frozen gold severity" }
-      : actionable === 0 ? { status: "unknown", reason: "no actionable findings" }
-      : { status: "measured", value: calibrated / actionable, numerator: calibrated, denominator: actionable },
+    severityCalibration: incomplete ? unknown : actionable === 0
+      ? { status: "unknown", reason: "no actionable findings" }
+      : labeled === 0 ? { status: "unknown", reason: "no independently labeled actionable findings" }
+      : { status: "measured", value: calibrated / labeled, numerator: calibrated, denominator: labeled },
+    severityLabelCoverage: incomplete ? unknown : actionable === 0
+      ? { status: "unknown", reason: "no actionable findings" }
+      : { status: "measured", value: labeled / actionable, numerator: labeled, denominator: actionable },
+    diagnostics: [...diagnostics],
   };
 }

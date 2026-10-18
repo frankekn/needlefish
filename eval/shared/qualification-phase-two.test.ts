@@ -4,6 +4,7 @@ import test from "node:test";
 import type { Finding } from "../../src/shared/schema";
 import { score, drawFindings } from "./score";
 import { evaluatePhaseTwoQualification, type PhaseTwoQualificationPolicy } from "./qualification";
+import { fixtureSetSha256 } from "./fixture-catalog";
 import { phaseTwoOracleIdentity } from "./quality-oracle";
 import type { DrawResult, FixtureSpec, Report } from "./types";
 
@@ -34,7 +35,7 @@ const policy: PhaseTwoQualificationPolicy = {
     minNoisePerPositive: null, minTierOneAggregate: null, minTierOnePerFixture: null,
     minTierOneFamilyRecall: null, minTierOneFamilyLocalization: null,
     minActionablePrecision: null, maxNegativeFalsePositiveDrawRate: null,
-    minSeverityCalibration: null, minObservedPassK: null,
+    minSeverityCalibration: null, minSeverityLabelCoverage: null, minObservedPassK: null,
   },
 };
 
@@ -77,19 +78,20 @@ test("Phase 2 admits complete distinct coverage but refuses unset floors and unk
   assert.deepEqual(result.tierOne, {
     hits: 90, total: 90, perFixture: Object.fromEntries(Array.from({ length: 15 }, (_, index) => [`t1-${index}`, 1])),
   });
-  assert.equal(result.reasons.filter((reason) => reason.startsWith("unset floor:")).length, 9);
+  assert.equal(result.reasons.filter((reason) => reason.startsWith("unset floor:")).length, 10);
   assert.deepEqual(result.actionablePrecision, { status: "unknown", reason: "independent actionable TP/FP adjudication is absent" });
   assert.deepEqual(result.severityCalibration, { status: "unknown", reason: "gold severity labels are absent" });
   const configuredResult = evaluatePhaseTwoQualification(campaign(), specs, {
     ...policy, floors: {
       minNoisePerPositive: 0, minTierOneAggregate: 0, minTierOnePerFixture: 0,
       minTierOneFamilyRecall: 0, minTierOneFamilyLocalization: 0, minActionablePrecision: 0,
-      maxNegativeFalsePositiveDrawRate: 0, minSeverityCalibration: 0, minObservedPassK: 0,
+      maxNegativeFalsePositiveDrawRate: 0, minSeverityCalibration: 0, minSeverityLabelCoverage: 0, minObservedPassK: 0,
     },
   });
   assert.deepEqual(configuredResult.reasons, [
     "unknown required metric: minActionablePrecision (independent actionable TP/FP adjudication is absent)",
     "unknown required metric: minSeverityCalibration (gold severity labels are absent)",
+    "unknown required metric: minSeverityLabelCoverage (gold severity labels are absent)",
   ]);
 });
 
@@ -184,7 +186,7 @@ function independentOracle(source: ReturnType<typeof campaign>) {
   const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   return {
     schemaVersion: 1,
-    identity: { broadSha256: digest(source.broad), deepSha256: digest(source.deep), fixtureSetSha256: digest(specs) },
+    identity: { broadSha256: digest(source.broad), deepSha256: digest(source.deep), fixtureSetSha256: fixtureSetSha256(specs) },
     adjudication: {
       author: "independent-reviewer", provenance: "synthetic blind source review",
       rows: source.broad.results.flatMap((result) => (result.findings ?? []).map((_, findingIndex) => ({
@@ -212,7 +214,7 @@ const configuredPolicy: PhaseTwoQualificationPolicy = {
   floors: {
     minNoisePerPositive: 0, minTierOneAggregate: 1, minTierOnePerFixture: 1,
     minTierOneFamilyRecall: 1, minTierOneFamilyLocalization: 1, minActionablePrecision: 1,
-    maxNegativeFalsePositiveDrawRate: 0, minSeverityCalibration: 1, minObservedPassK: 1,
+    maxNegativeFalsePositiveDrawRate: 0, minSeverityCalibration: 1, minSeverityLabelCoverage: 1, minObservedPassK: 1,
   },
 };
 
@@ -227,16 +229,16 @@ test("Phase 2 oracle includes negative false positives and independently adjudic
   const rows = oracle.adjudication.rows.map((row) => row.fixtureId === "negative"
     ? { fixtureId: row.fixtureId, draw: row.draw, findingIndex: row.findingIndex, decision: "false_positive" }
     : { ...row, defectId: row.findingIndex === 1 ? "sibling" : row.defectId });
-  const labels = [...oracle.severityGold.labels, { fixtureId: "t1-0", defectId: "sibling", acceptedSeverities: ["P1"] }];
   const result = evaluatePhaseTwoQualification(source, specs, configuredPolicy, {
-    ...oracle, adjudication: { ...oracle.adjudication, rows }, severityGold: { ...oracle.severityGold, labels },
+    ...oracle, adjudication: { ...oracle.adjudication, rows },
   });
   assert.deepEqual(result.actionablePrecision, { status: "measured", value: 52 / 53, numerator: 52, denominator: 53 });
-  assert.deepEqual(result.severityCalibration, { status: "measured", value: 51 / 52, numerator: 51, denominator: 52 });
+  assert.deepEqual(result.severityCalibration, { status: "measured", value: 1, numerator: 51, denominator: 51 });
+  assert.deepEqual(result.severityLabelCoverage, { status: "measured", value: 51 / 52, numerator: 51, denominator: 52 });
   assert.deepEqual(result.requiredGoldMatchPrecisionProxy.micro, { status: "measured", value: 51 / 53, numerator: 51, denominator: 53 });
   assert.equal(result.eligible, false);
   assert.equal(result.reasons.includes("failed floor: minActionablePrecision"), true);
-  assert.equal(result.reasons.includes("failed floor: minSeverityCalibration"), true);
+  assert.equal(result.reasons.includes("failed floor: minSeverityLabelCoverage"), true);
 });
 
 test("Phase 2 independent labels allow complete synthetic qualification without selecting production floors", () => {
@@ -261,6 +263,7 @@ test("Phase 2 partial or unresolved adjudication cannot qualify even with zero q
     const result = evaluatePhaseTwoQualification(source, specs, zeroQuality, { ...oracle, adjudication: { ...oracle.adjudication, rows } });
     assert.deepEqual(result.actionablePrecision, { status: "unknown", reason: "missing or unresolved independent finding adjudication" });
     assert.deepEqual(result.severityCalibration, { status: "unknown", reason: "missing or unresolved independent finding adjudication" });
+    assert.deepEqual(result.severityLabelCoverage, { status: "unknown", reason: "missing or unresolved independent finding adjudication" });
     assert.equal(result.eligible, false);
   }
 });
@@ -268,10 +271,11 @@ test("Phase 2 partial or unresolved adjudication cannot qualify even with zero q
 test("Phase 2 missing gold preserves actionable precision but cannot infer severity from predictions", () => {
   const source = campaign();
   const oracle = independentOracle(source);
-  for (const severityGold of [null, { ...oracle.severityGold, labels: [] }, { ...oracle.severityGold, labels: oracle.severityGold.labels.slice(1) }]) {
+  for (const severityGold of [null, { ...oracle.severityGold, labels: [] }]) {
     const result = evaluatePhaseTwoQualification(source, specs, configuredPolicy, { ...oracle, severityGold });
     assert.deepEqual(result.actionablePrecision, { status: "measured", value: 1, numerator: 51, denominator: 51 });
-    assert.deepEqual(result.severityCalibration, { status: "unknown", reason: "missing independently frozen gold severity" });
+    assert.deepEqual(result.severityCalibration, { status: "unknown", reason: "no independently labeled actionable findings" });
+    assert.deepEqual(result.severityLabelCoverage, { status: "measured", value: 0, numerator: 0, denominator: 51 });
     assert.equal(result.eligible, false);
   }
   const downgraded = { ...source, broad: report(specs, 3, (spec) => spec.kind === "positive" ? [{ ...finding, severity: "P3" }] : []) };
@@ -371,4 +375,70 @@ test("Phase 2 independent oracle cannot override compromised reports or promote 
   assert.deepEqual(proxyOnly.severityCalibration, { status: "unknown", reason: "gold severity labels are absent" });
   assert.equal(proxyOnly.eligible, false);
   assert.throws(() => evaluatePhaseTwoQualification(source, siblingSpecs, configuredPolicy, independentOracle(source)), /fixtureSetSha256/);
+});
+
+
+test("Phase 2 omitted floors stay unset even when an oracle measures all quality metrics", () => {
+  const source = campaign();
+  for (const key of Object.keys(configuredPolicy.floors)) {
+    for (const mode of ["omitted", "undefined"] as const) {
+      const floors = { ...configuredPolicy.floors };
+      if (mode === "omitted") Reflect.deleteProperty(floors, key);
+      else Reflect.set(floors, key, undefined);
+      const result = evaluatePhaseTwoQualification(source, specs, { ...configuredPolicy, floors }, independentOracle(source));
+      assert.equal(result.eligible, false, `${key} ${mode}`);
+      assert.equal(result.reasons.includes(`unset floor: ${key}`), true, `${key} ${mode}`);
+    }
+  }
+});
+
+
+test("Phase 2 partial severity labels measure calibration and independently gate label coverage", () => {
+  const source = campaign();
+  const oracle = independentOracle(source);
+  const partial = { ...oracle, severityGold: { ...oracle.severityGold, labels: oracle.severityGold.labels.slice(1) } };
+  const result = evaluatePhaseTwoQualification(source, specs, configuredPolicy, partial);
+  assert.deepEqual(result.severityCalibration, { status: "measured", value: 1, numerator: 48, denominator: 48 });
+  assert.deepEqual(result.severityLabelCoverage, { status: "measured", value: 48 / 51, numerator: 48, denominator: 51 });
+  assert.deepEqual(result.reasons, ["failed floor: minSeverityLabelCoverage"]);
+  const testOnlyRelaxed = { ...configuredPolicy, floors: { ...configuredPolicy.floors, minSeverityLabelCoverage: 0.9 } };
+  assert.equal(evaluatePhaseTwoQualification(source, specs, testOnlyRelaxed, partial).eligible, true);
+});
+
+test("Phase 2 a newly discovered sibling needs no invented pre-run severity gold", () => {
+  const source = { ...campaign(), broad: report(specs, 3, (spec, index) => spec.kind === "negative" ? []
+    : spec.id === "t1-0" && index === 0 ? [finding, { ...finding, severity: "P3", title: "new sibling" }] : [finding]) };
+  const oracle = independentOracle(source);
+  const independent = { ...oracle, adjudication: { ...oracle.adjudication, rows: oracle.adjudication.rows.map((row) =>
+    row.findingIndex === 1 ? { ...row, defectId: "new-sibling" } : row) } };
+  const result = evaluatePhaseTwoQualification(source, specs, configuredPolicy, independent);
+  assert.deepEqual(result.actionablePrecision, { status: "measured", value: 1, numerator: 52, denominator: 52 });
+  assert.deepEqual(result.severityCalibration, { status: "measured", value: 1, numerator: 51, denominator: 51 });
+  assert.deepEqual(result.severityLabelCoverage, { status: "measured", value: 51 / 52, numerator: 51, denominator: 52 });
+  assert.deepEqual(result.reasons, ["failed floor: minSeverityLabelCoverage"]);
+  const testOnlyRelaxed = { ...configuredPolicy, floors: { ...configuredPolicy.floors, minSeverityLabelCoverage: 0.9 } };
+  assert.equal(evaluatePhaseTwoQualification(source, specs, testOnlyRelaxed, independent).eligible, true);
+});
+
+test("Phase 2 canonical fixture identity survives catalog order and display metadata changes", () => {
+  const source = campaign();
+  const oracle = independentOracle(source);
+  const reordered = [...specs].reverse().map((spec) => ({ ...spec, description: "other display text" }));
+  assert.deepEqual(phaseTwoOracleIdentity(source, reordered), oracle.identity);
+  assert.equal(evaluatePhaseTwoQualification(source, reordered, configuredPolicy, oracle).eligible, true);
+  const changed = specs.map((spec, index) => index === 0 ? { ...spec, headFiles: { "guard.ts": "changed();\n" } } : spec);
+  assert.throws(() => evaluatePhaseTwoQualification(source, changed, configuredPolicy, oracle), /fixtureSetSha256/);
+});
+
+test("Phase 2 independent actionable negatives retain legacy scores and block contradictory truth", () => {
+  const source = { ...campaign(), broad: report(specs, 3, (spec, index) => spec.kind === "positive" || index === 0 ? [finding] : []) };
+  const before = JSON.stringify(source);
+  const oracle = independentOracle(source);
+  const permissive = { ...configuredPolicy, floors: { ...configuredPolicy.floors, maxNegativeFalsePositiveDrawRate: 1, minSeverityLabelCoverage: 0 } };
+  const result = evaluatePhaseTwoQualification(source, specs, permissive, oracle);
+  assert.deepEqual(result.actionablePrecision, { status: "measured", value: 1, numerator: 52, denominator: 52 });
+  assert.deepEqual(result.negativeFalsePositiveDrawRate, { status: "measured", value: 1 / 3, numerator: 1, denominator: 3 });
+  assert.deepEqual(result.reasons, ["independent actionable finding conflicts with negative false-positive proxy: negative draw 0"]);
+  assert.equal(result.eligible, false);
+  assert.equal(JSON.stringify(source), before);
 });

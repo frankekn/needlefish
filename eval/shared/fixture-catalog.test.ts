@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { filterByHoldout, fixtureSetHash, loadFixtures } from "./fixture-catalog";
+import { filterByHoldout, fixtureSetHash, fixtureSetSha256, loadFixtures } from "./fixture-catalog";
 import type { FixtureSpec } from "./types";
 
 function spec(id: string, extra: Partial<FixtureSpec> = {}): FixtureSpec {
@@ -153,4 +153,14 @@ test("integration: document generators import the catalog rather than the execut
     assert.match(source, /from ["']\.\/shared\/fixture-catalog["']/);
     assert.doesNotMatch(source, /from ["']\.\/run(?:\.[cm]?[jt]s)?["']/);
   }
+});
+
+
+test("catalog full SHA shares the exact historical canonical serialization", () => {
+  assert.equal(fixtureSetSha256([]), "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945");
+  assert.match(fixtureSetSha256(golden), /^[a-f0-9]{64}$/);
+  assert.equal(fixtureSetSha256(golden).slice(0, 16), "39f8301c791011d1");
+  assert.equal(fixtureSetSha256([...golden].reverse()), fixtureSetSha256(golden));
+  const renamed = { ...golden[0], renamedFiles: [...golden[0].renamedFiles!].reverse(), deletedFiles: [...golden[0].deletedFiles!].reverse() };
+  assert.equal(fixtureSetSha256([renamed, golden[1]]), fixtureSetSha256(golden));
 });

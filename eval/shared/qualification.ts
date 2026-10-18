@@ -123,24 +123,20 @@ export type QualityRate =
   | { readonly status: "measured"; readonly value: number; readonly numerator: number; readonly denominator: number }
   | { readonly status: "unknown"; readonly reason: string };
 
-type PhaseTwoFloor =
-  | "minNoisePerPositive"
-  | "minTierOneAggregate"
-  | "minTierOnePerFixture"
-  | "minTierOneFamilyRecall"
-  | "minTierOneFamilyLocalization"
-  | "minActionablePrecision";
+const PHASE_TWO_FLOORS = [
+  "minNoisePerPositive", "minTierOneAggregate", "minTierOnePerFixture",
+  "minTierOneFamilyRecall", "minTierOneFamilyLocalization", "minActionablePrecision",
+  "maxNegativeFalsePositiveDrawRate", "minSeverityCalibration", "minSeverityLabelCoverage", "minObservedPassK",
+] as const;
+
+type PhaseTwoFloor = typeof PHASE_TWO_FLOORS[number];
 
 export interface PhaseTwoQualificationPolicy {
   readonly id: string;
   readonly broadDraws: number;
   readonly deepDraws: number;
   readonly consistencyK: number;
-  readonly floors: { readonly [Key in PhaseTwoFloor]: number | null } & {
-    readonly maxNegativeFalsePositiveDrawRate: number | null;
-    readonly minSeverityCalibration: number | null;
-    readonly minObservedPassK: number | null;
-  };
+  readonly floors: { readonly [Key in PhaseTwoFloor]: number | null };
 }
 
 export interface PhaseTwoQualificationResult {
@@ -162,6 +158,7 @@ export interface PhaseTwoQualificationResult {
   readonly observedPassK: { readonly k: number; readonly fixtureWeighted: QualityRate };
   readonly actionablePrecision: QualityRate;
   readonly severityCalibration: QualityRate;
+  readonly severityLabelCoverage: QualityRate;
 }
 
 function rate(numerator: number, denominator: number): QualityRate {
@@ -299,17 +296,18 @@ export function evaluatePhaseTwoQualification(
       return sum + observedSubsetPassRate(draws.filter((draw) => draw.score.recall).length, draws.length, policy.consistencyK);
     }, 0), tierOneSpecs.length),
   };
-  const { actionablePrecision, severityCalibration } = measureIndependentQuality(campaign, specs, oracle);
-  const reasons = [...checkPhaseTwoFixturePlan(specs).errors];
-  for (const [name, value] of Object.entries(policy.floors)) {
-    if (value === null) reasons.push(`unset floor: ${name}`);
+  const { actionablePrecision, severityCalibration, severityLabelCoverage, diagnostics } = measureIndependentQuality(campaign, specs, oracle);
+  const reasons = [...checkPhaseTwoFixturePlan(specs).errors, ...diagnostics];
+  for (const name of PHASE_TWO_FLOORS) {
+    const value = policy.floors[name];
+    if (value === null || value === undefined) reasons.push(`unset floor: ${name}`);
     else if (!Number.isFinite(value) || value < 0 || (name !== "minNoisePerPositive" && value > 1)) throw new Error(`invalid Phase 2 floor: ${name}`);
   }
   function floor(name: keyof PhaseTwoQualificationPolicy["floors"], metric: QualityRate, maximum = false): void {
     if (metric.status === "unknown") reasons.push(`unknown required metric: ${name} (${metric.reason})`);
     else {
       const threshold = policy.floors[name];
-      if (threshold !== null && (maximum ? metric.value > threshold : metric.value < threshold)) reasons.push(`failed floor: ${name}`);
+      if (threshold !== null && threshold !== undefined && (maximum ? metric.value > threshold : metric.value < threshold)) reasons.push(`failed floor: ${name}`);
     }
   }
   floor("minTierOneAggregate", rate(tierOneHits, deep.length));
@@ -321,6 +319,7 @@ export function evaluatePhaseTwoQualification(
   floor("minObservedPassK", observedPassK.fixtureWeighted);
   floor("minActionablePrecision", actionablePrecision);
   floor("minSeverityCalibration", severityCalibration);
+  floor("minSeverityLabelCoverage", severityLabelCoverage);
   if ([...campaign.broad.results, ...deep].some((draw) => !draw.score.formatOk || draw.score.cheatDetected)) reasons.push("invalid or compromised draw");
   return {
     protocol: "phase-two", policyId: policy.id, eligible: reasons.length === 0, reasons: [...new Set(reasons)],
@@ -329,6 +328,6 @@ export function evaluatePhaseTwoQualification(
     broadRecallByFamilyDiagnostic: familyRecall(positives, broadPositiveSpecs),
     localizationByTierOneFamily, requiredGoldMatchPrecisionProxy,
     negativeFalsePositiveDrawRate, meanNoisePerPositive, observedPassK,
-    actionablePrecision, severityCalibration,
+    actionablePrecision, severityCalibration, severityLabelCoverage,
   };
 }
