@@ -98,6 +98,7 @@ test("native runner keeps contradictory terminals as a private operational failu
       assert.equal(error.name, "RunnerOperationalError");
       assert.equal(findRunnerFailure(error), undefined);
       assert.match(error.message, /^codex runner exited 1/);
+      assert.doesNotMatch(error.message, /likely cause: (?:usage limit|rate limited|network error|empty output|truncated output|html error page)/);
       assert.match(error.message, /stderr withheld because it may contain the review prompt/);
       assert.equal(Reflect.get(error, "rawOutput"), raw);
       assert.equal(Object.getOwnPropertyDescriptor(error, "rawOutput")?.enumerable, false);
