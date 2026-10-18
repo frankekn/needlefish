@@ -438,7 +438,8 @@ to use `PATH`.
   This keeps the target's `.agents/skills`, `.codex/skills`, project config
   and hooks out of native startup discovery. `-c project_doc_max_bytes=0`
   also disables `AGENTS.md` and `AGENTS.override.md` discovery. Review
-  policy comes only from the merge-base copy in the bundle. A configured
+  policy comes only from the bundle. Uncommitted reviews use the committed
+  `HEAD` copy, and every other review uses the merge-base copy. A configured
   `NEEDLEFISH_TMPDIR` inside the target repository is rejected.
   Verified with Codex CLI 0.163.0 using prompt input, native skills/config/hooks
   introspection and a session shell command that reads the target Git history.
