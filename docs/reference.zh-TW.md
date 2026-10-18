@@ -86,8 +86,10 @@ exit status。舊版 neutral `needs_human` check 在同一 head 再次觸發時�
 開啟中 PR。既有 check 不會自動更新，neutral check 仍可能滿足 branch
 protection。
 
-審查指令只有 `pass` 會 exit 0；`changes_requested`、`needs_human` 與執行
-失敗都 exit 1，`--json` 輸出也一樣。`needs_human` 表示審查未完成或需要
+產生 verdict 的審查指令只有 `pass` 會 exit 0；`changes_requested`、
+`needs_human` 與執行失敗都 exit 1，`--json` 輸出也一樣。GitHub 模式下
+closed、stale 與 untrusted-author 跳過會 exit 0，並輸出 `needlefish-skip`。
+same-head 跳過沿用已完成 verdict 的 exit status。`needs_human` 表示審查未完成或需要
 人工確認，不代表程式有缺陷。請重跑審查，或請 maintainer 檢查未審到的
 範圍。除非以 `NEEDLEFISH_NO_FAST_PATH=1` 關閉 fast path，純文件變更會依
 政策通過，並明確標示「Model review skipped by policy」；這類變更沒有任何
