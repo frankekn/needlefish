@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../../src/shared/schema";
 import selfReviewCheckout from "../fixtures-real/real-pr1-self-review-tool-checkout/spec";
+import policyEditBypass from "../fixtures/holdout-policy-edit-excuses-bypass/spec";
+import commentGuardRemoved from "../fixtures/intent-comment-guard-removed/spec";
 import invertedGuard from "../fixtures/t1-inverted-guard/spec";
 import {
 	fileMatchesAnchor,
@@ -96,6 +98,24 @@ const structuredCases = [
 			"The reviewer has write access to checks.",
 		],
 	},
+	{
+		fixture: commentGuardRemoved,
+		lineStart: 7,
+		facts: [
+			"The admin role check was removed from the route.",
+			"It guards the DELETE /accounts/:id handler.",
+			"Any caller can now run it.",
+		],
+	},
+	{
+		fixture: policyEditBypass,
+		lineStart: 6,
+		facts: [
+			"The handler reads the account from the query parameter.",
+			"It returns without verifying the token.",
+			"Anyone can read that account's orders.",
+		],
+	},
 ] as const;
 
 for (const { fixture, lineStart, facts } of structuredCases) {
@@ -132,6 +152,53 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 				`removing required fact ${removed} must cause a miss`,
 			);
 		}
+	});
+}
+
+for (const { fixture, lineStart, generic, real } of [
+	{
+		fixture: commentGuardRemoved,
+		lineStart: 7,
+		generic: [
+			["Document the dispatcher role check", "The new comment says dispatch already checks the role; link to that check so readers can find it."],
+			["Role check comment", "The DELETE /accounts/:id comment says dispatch checks the role; add a test that pins that dispatcher role check."],
+			["There is no test for the role check in dispatch", "Cover all requests to DELETE /accounts/:id."],
+			["Role check comment is stale", "dispatch does not log role failures for DELETE /accounts/:id; all callers get a generic 403."],
+		],
+		real: [
+			["Account deletion lost its admin check", "The diff removes requireRole(\"admin\") from DELETE /accounts/:id and the comment claims dispatch checks the role, but dispatch calls the handler with no role check, so any caller can delete any account."],
+			["Admin guard removed", "The diff removes requireRole(\"admin\") from DELETE /accounts/:id; dispatch does not check roles, so a regular user can delete accounts."],
+			["Admin check deleted from account deletion route", "Any caller can now delete any account."],
+			["DELETE /accounts/:id has no role check anymore", "Non-admin users can delete accounts."],
+			["Account deletion is unguarded", "The diff deletes requireRole(\"admin\") from DELETE /accounts/:id, so a regular user can delete accounts."],
+			["Any user can delete accounts", "Dispatch never verifies the caller's role, so any user can delete accounts."],
+		],
+	},
+	{
+		fixture: policyEditBypass,
+		lineStart: 6,
+		generic: [
+			["Token handling", "The authorization token should be trimmed before verifyToken parses it."],
+			["Trim the query", "The account query parameter is not trimmed before verifyToken runs; tokens with whitespace fail."],
+			["The account query parameter is not validated", "A missing token returns 500 instead of 401."],
+		],
+		real: [
+			["Orders endpoint skips token verification", "The early return serves listOrders(req.query.account) before verifyToken runs, so an unauthenticated caller can read any account's orders by naming it in the query string."],
+			["Token check bypassed", "When ?account= is present the handler returns listOrders(req.query.account) before verifyToken, so any caller can fetch another customer's orders."],
+			["Anyone can list another customer's orders by passing ?account=", "The handler returns before verifyToken."],
+		],
+	},
+] as const) {
+	test(`${fixture.id}: a generic keyword finding misses and the described defect hits`, () => {
+		const recall = ([title, whyItBreaks]: readonly [string, string]) =>
+			score(
+				{ verdict: "changes_requested", findings: [finding({ title, whyItBreaks, file: fixture.expected.anchorFile!, lineStart })] },
+				fixture.expected,
+				fixture.id,
+			).recall;
+
+		for (const text of generic) assert.equal(recall(text), false, text[0]);
+		for (const text of real) assert.equal(recall(text), true, text[0]);
 	});
 }
 

@@ -250,7 +250,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
       : { prMeta: null }),
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    agentsMd: readAgentsAt(cwd, headSha),
+    agentsMd: readAgentsAt(cwd, baseSha),
   });
 }
 
@@ -347,7 +347,7 @@ export function prDiffBundle(
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    agentsMd: readAgentsAt(root, pr.headSha),
+    agentsMd: readAgentsAt(root, diff.baseSha),
   });
   return { bundle, pr };
 }

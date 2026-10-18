@@ -571,6 +571,7 @@ interface RunnerAttemptResult {
 interface RunnerInvocation {
 	readonly acpLaunch?: AcpLaunchSpec;
 	readonly prompt: string;
+	readonly launchPath: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
@@ -765,6 +766,7 @@ async function runCodexOnce(
 						...(opts.acpLaunch ? { acpLaunch: opts.acpLaunch } : {}),
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
+						launchPath: sandbox.launchPath,
 						model,
 						reasoningEffort: opts.reasoningEffort,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
@@ -1229,10 +1231,15 @@ async function runRunner(
 	}
 }
 
+function outsideLaunchPrompt(invocation: RunnerInvocation): string {
+	return `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`;
+}
+
 async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
+	const command = requireRunnerCommand("codex");
 	const reasoningEffort = resolveCodexReasoningEffort();
 	const serviceTier = resolveCodexServiceTier();
 	const args = [
@@ -1242,6 +1249,11 @@ async function runCodexCli(
 		"--ignore-user-config",
 		"-c",
 		`model_reasoning_effort="${reasoningEffort}"`,
+		// The sandbox is checked out at the PR head, so its AGENTS.md (and
+		// AGENTS.override.md) is author-controlled. Review policy comes only from
+		// the bundle's merge-base agentsMd (issue #240); 0 skips project docs.
+		"-c",
+		"project_doc_max_bytes=0",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--ignore-rules",
 		"--skip-git-repo-check",
@@ -1271,10 +1283,10 @@ async function runCodexCli(
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: requireRunnerCommand("codex"),
+		command,
 		args,
-		stdin: invocation.prompt,
-		repoPath: invocation.repoPath,
+		stdin: outsideLaunchPrompt(invocation),
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1392,7 +1404,11 @@ async function runOpenCode(
 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const promptPath = path.join(invocation.tmp, "prompt.txt");
-	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+	writeFileSync(
+		promptPath,
+		outsideLaunchPrompt(invocation),
+		{ mode: 0o600 },
+	);
 	const args = [
 		"-m",
 		invocation.model ?? "grok-build",
@@ -1413,7 +1429,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
-		repoPath: invocation.repoPath,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1448,6 +1464,11 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const args = [
 		"-p",
 		"--no-session",
+		// The sandbox is the PR head: its AGENTS.md, CLAUDE.md and project-local
+		// skills are author-controlled. Policy comes only from the bundle's
+		// merge-base agentsMd (issue #240).
+		"--no-context-files",
+		"--no-approve",
 		"--mode",
 		"text",
 		"--provider",

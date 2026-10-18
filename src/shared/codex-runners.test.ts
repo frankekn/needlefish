@@ -266,45 +266,51 @@ test("runCodex retries an opencode attempt that stops producing output", async (
 	assert.equal(readFileSync(attemptsPath, "utf8"), "2");
 });
 
-test("runCodex rejects non-codex runners that dirty the target repo", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "claude-bin.js");
-	const previous = {
-		bin: process.env.CLAUDE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
-		else process.env.CLAUDE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			"fs.writeFileSync('runner-wrote.txt', 'dirty');",
-			"process.stdout.write('{\"ok\":true}');",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.CLAUDE_BIN = bin;
-	process.env.NEEDLEFISH_RUNNER = "claude";
+for (const runner of ["claude", "grok"] as const) {
+	test(`runCodex rejects ${runner} when it dirties the target repo`, async (t) => {
+		const binEnv = runner === "claude" ? "CLAUDE_BIN" : "GROK_BIN";
+		const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+		const repo = initRepo(tmp);
+		const bin = path.join(tmp, `${runner}-bin.js`);
+		const previous = {
+			bin: process.env[binEnv],
+			runner: process.env.NEEDLEFISH_RUNNER,
+		};
+		t.after(() => {
+			if (previous.bin === undefined) delete process.env[binEnv];
+			else process.env[binEnv] = previous.bin;
+			if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+			else process.env.NEEDLEFISH_RUNNER = previous.runner;
+			rmSync(tmp, { recursive: true, force: true });
+		});
+		writeFileSync(
+			bin,
+			[
+				"#!/usr/bin/env node",
+				"const fs = require('node:fs');",
+				...(runner === "grok" ? [
+					"const path = require('node:path');",
+					"fs.writeFileSync(path.join(path.dirname(process.cwd()), 'runner-repo', 'runner-wrote.txt'), 'dirty');",
+				] : ["fs.writeFileSync('runner-wrote.txt', 'dirty');"]),
+				"process.stdout.write('{\"ok\":true}');",
+			].join("\n"),
+		);
+		chmodSync(bin, 0o755);
+		process.env[binEnv] = bin;
+		process.env.NEEDLEFISH_RUNNER = runner;
 
-	await assert.rejects(
-		() =>
-			runCodex("prompt", {
-				repoPath: repo,
-				targetHeadSha: headSha(repo),
-				timeoutMs: 1000,
-			}),
-		/claude runner changed the review sandbox worktree/,
-	);
-	assert.equal(existsSync(path.join(repo, "runner-wrote.txt")), false);
-});
+		await assert.rejects(
+			() =>
+				runCodex("prompt", {
+					repoPath: repo,
+					targetHeadSha: headSha(repo),
+					timeoutMs: 1000,
+				}),
+			new RegExp(`${runner} runner changed the review sandbox worktree`),
+		);
+		assert.equal(existsSync(path.join(repo, "runner-wrote.txt")), false);
+	});
+}
 
 test("runCodex ignores CodeGraph cache files in the review sandbox", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
@@ -578,7 +584,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 	assert.equal(Object.keys(err).includes("rawOutput"), false);
 });
 
-test("runCodex omits grok permission restrictions by default", async () => {
+test("Grok launches outside the target with absolute inspection paths and unrestricted tools", async () => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "grok-bin.js");
@@ -594,6 +600,10 @@ test("runCodex omits grok permission restrictions by default", async () => {
 				"#!/usr/bin/env node",
 				"const fs = require('node:fs');",
 				`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+				"const prompt = fs.readFileSync(process.argv[process.argv.indexOf('--prompt-file') + 1], 'utf8');",
+				"const repoPath = JSON.parse(prompt.slice('The repository to inspect is '.length, prompt.indexOf('. Your startup directory')));",
+				"const head = require('node:child_process').execFileSync('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
+				`fs.writeFileSync(${JSON.stringify(argsPath + ".inspection")}, JSON.stringify({ cwd: process.cwd(), entries: fs.readdirSync(process.cwd()), repoPath: fs.realpathSync(repoPath), prompt, head }));`,
 				"process.stdout.write('{\"ok\":true}');",
 			].join("\n"),
 		);
@@ -607,6 +617,18 @@ test("runCodex omits grok permission restrictions by default", async () => {
 		});
 		const args = readStringArray(argsPath);
 
+		const inspection: unknown = JSON.parse(readFileSync(argsPath + ".inspection", "utf8"));
+		assert.ok(typeof inspection === "object" && inspection !== null);
+		assert.ok("cwd" in inspection && "entries" in inspection && "repoPath" in inspection && "prompt" in inspection && "head" in inspection);
+		assert.equal(typeof inspection.cwd, "string");
+		assert.equal(path.basename(String(inspection.cwd)), "runner-launch");
+		assert.deepEqual(inspection.entries, []);
+		assert.equal(inspection.repoPath, path.join(path.dirname(String(inspection.cwd)), "runner-repo"));
+		assert.equal(inspection.head, headSha(repo));
+		assert.match(String(inspection.prompt), /Use git -C/);
+		assert.match(String(inspection.prompt), /\n\nprompt$/);
+		assert.equal(existsSync(String(inspection.cwd)), false);
+		assert.equal(existsSync(String(inspection.repoPath)), false);
 		assert.equal(output, '{"ok":true}');
 		assert.equal(args.includes("--always-approve"), true);
 		assert.equal(
@@ -855,6 +877,8 @@ test("runCodex invokes pi with default provider/model/thinking flags and the pro
 		assert.deepEqual(args, [
 			"-p",
 			"--no-session",
+			"--no-context-files",
+			"--no-approve",
 			"--mode",
 			"text",
 			"--provider",

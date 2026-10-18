@@ -238,6 +238,13 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["empty consumerFile", false, (_r, f) => { f.consumerFile = ""; }],
 		["empty replacement", false, (_r, f) => { f.replacement = { lines: [] }; }],
 		["multi-line replacement entry", false, (_r, f) => { f.replacement = { lines: ["a\nb"] }; }],
+		["quote", true, (_r, f) => { f.quote = "source"; }],
+		["quote with inner spaces", true, (_r, f) => { f.quote = "const a = b;"; }],
+		["leading-space quote", false, (_r, f) => { f.quote = " source"; }],
+		["trailing-space quote", false, (_r, f) => { f.quote = "source "; }],
+		["NUL quote", false, (_r, f) => { f.quote = "source\u0000"; }],
+		["inner NUL quote", false, (_r, f) => { f.quote = "sou\u0000rce"; }],
+		["multi-line quote", false, (_r, f) => { f.quote = "a\nb"; }],
 		["unknown runner", false, (_r, _f, s) => { s.runner = "gpt"; }],
 		["zero attempts", false, (_r, _f, s) => { s.attempts = 0; }],
 		["negative token usage", false, (_r, _f, s) => {
@@ -327,6 +334,8 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 			consumerFile: "optional",
 			consumerLine: "optional",
 			replacement: "optional",
+			quote: "optional",
+			quoteCheck: "optional",
 		},
 		"$defs",
 		"finding",
@@ -337,6 +346,13 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		"finding",
 		"properties",
 		"replacement",
+	);
+	assertFields<{ status: NonNullable<Finding["quoteCheck"]>["status"]; from?: string }>(
+		{ status: "required", from: "optional" },
+		"$defs",
+		"finding",
+		"properties",
+		"quoteCheck",
 	);
 	assertFields<ResidualRisk>({ text: "required", blocks: "required" }, "$defs", "residualRisk");
 	assertFields<ScopeCallout>({ surface: "required", files: "required" }, "$defs", "scopeCallout");

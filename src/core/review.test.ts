@@ -892,7 +892,7 @@ test("a deep pass crash waits for concurrent siblings before snapshotting transc
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			"    if (input.includes('\"dies\"')) {",
-			"      fs.writeFileSync('runner-wrote.txt', 'dirty');",
+			"      fs.writeFileSync(require('node:path').join(require('node:path').dirname(out), 'runner-repo', 'runner-wrote.txt'), 'dirty');",
 			"      fs.writeFileSync(out, JSON.stringify({ summary: 'dies done', findings: [], checked: ['dies checked'], residual_risks: [] }));",
 			"      process.exit(0);",
 			"    }",
@@ -2737,4 +2737,64 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 	for (const leak of ["coverageGaps", "lfs_scan_incomplete", "Coverage uncertain"]) {
 		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
 	}
+});
+
+test("review bounds quote finalization by its shared deadline without changing the verdict", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-quote-deadline-"));
+	const repo = initRepo(tmp);
+	const shimDir = path.join(tmp, "bin");
+	mkdirSync(shimDir);
+	const bin = path.join(shimDir, "codex.cjs");
+	const gitShim = path.join(shimDir, "git");
+	const calls = path.join(tmp, "grep-calls");
+	const realGit = execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim() + "/git";
+	const finding = {
+		severity: "P2", title: "Bug", category: "bug", file: "app.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "The changed call breaks.", suggestedFix: "Fix the call.",
+		validation: "Run the test.", quote: "const changed = breaks();", replacement: { lines: ["fixed();"] },
+	};
+	writeFileSync(path.join(repo, "app.ts"), finding.quote + "\n");
+	commitAll(repo, "changed call");
+	writeFileSync(bin, [
+		`#!${process.execPath}`,
+		"const fs = require('node:fs');",
+		"process.stdin.resume(); process.stdin.on('end', () => {",
+		`  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify({ summary: "Found bug", findings: [finding], checked: ["Checked app.ts"], residual_risks: [] }))});`,
+		"});",
+	].join("\n"));
+	writeFileSync(gitShim, [
+		`#!${process.execPath}`,
+		"const fs = require('node:fs'); const { spawnSync } = require('node:child_process');",
+		"const args = process.argv.slice(2);",
+		"if (args.includes('grep')) {",
+		`  fs.appendFileSync(${JSON.stringify(calls)}, 'grep');`,
+		"  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);",
+		"}",
+		`const result = spawnSync(${JSON.stringify(realGit)}, args, { encoding: 'utf8' });`,
+		"process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || ''); process.exit(result.status ?? 2);",
+	].join("\n"));
+	chmodSync(bin, 0o755);
+	chmodSync(gitShim, 0o755);
+	const previous = { CODEX_BIN: process.env.CODEX_BIN, PATH: process.env.PATH, NEEDLEFISH_REVIEW_TIMEOUT_MS: process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS };
+	t.after(() => {
+		for (const [key, value] of Object.entries(previous)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.CODEX_BIN = bin;
+	process.env.PATH = shimDir + path.delimiter + process.env.PATH;
+	process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "1500";
+	const startedAt = Date.now();
+	const result = await review({
+		repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
+		changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "", prMeta: null, deep: false, focus: null,
+	}, { runner: "codex" });
+	assert.equal(result.verdict, "changes_requested");
+	assert.equal(result.findings.length, 1);
+	assert.deepEqual(result.findings[0].quoteCheck, { status: "unchecked" });
+	assert.equal(result.findings[0].replacement, undefined);
+	assert.equal(readFileSync(calls, "utf8"), "grep");
+	assert.ok(Date.now() - startedAt < 2600, "post-model quote work exceeded the review budget");
 });

@@ -517,6 +517,36 @@ test("renderMarkdown collapses embedded newlines in callout paths", () => {
 	assert.ok(!markdown.includes("new\nline"));
 });
 
+test("renderMarkdown adds the quote-check location note to finding details", () => {
+	const moved = renderMarkdown(baseResult([finding("P2", "moved", "b.ts", { quoteCheck: { status: "moved", from: "a.ts:9" } })]));
+	const missing = renderMarkdown(baseResult([finding("P2", "missing", "c.ts", { quoteCheck: { status: "not_found" } })]));
+	const matched = renderMarkdown(baseResult([finding("P2", "same", "d.ts", { quoteCheck: { status: "matched" } })]));
+
+	assert.match(moved, /_Location corrected from `a\.ts:9`: the quoted source was found here\._/);
+	assert.match(missing, /_Location unverified: the quoted source could not verify the cited location in `c\.ts`\._/);
+	assert.equal(matched, renderMarkdown(baseResult([finding("P2", "same", "d.ts")])));
+});
+
+test("renderMarkdown keeps a hostile path inside one inert code span in the location note", () => {
+	const from = "a`b\n\n[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "moved", "b.ts", { quoteCheck: { status: "moved", from } })]));
+
+	assert.match(out, /_Location corrected from `` a`b \[notice\]\(https:\/\/example\.invalid\) ``: the quoted source/);
+});
+
+test("renderMarkdown folds a bare CR in a hostile path so the note stays one paragraph", () => {
+	const file = "a`b\r\r[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "missing", file, { quoteCheck: { status: "not_found" } })]));
+	const note = out.split("\n").find((line) => line.startsWith("_Location unverified"));
+
+	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
+});
+
+test("renderMarkdown warns when source quotes could not be verified at HEAD", () => {
+	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
+	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
+});
+
 test("docs-only output identifies a policy skip without claiming a model review", () => {
   const output = renderMarkdown({ ...baseResult([], "pass"),
     summary: "Docs-only change (1 file(s)); model review skipped.",
