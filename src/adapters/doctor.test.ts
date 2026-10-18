@@ -536,7 +536,11 @@ test("doctor reports HTTP review capability as unsupported even with a configure
   const capability = report.checks.find((entry) => entry.name === "capability");
   assert.equal(capability?.status, "fail");
   assert.match(capability?.detail ?? "", /unsupported-capability.*repositoryRead/);
-  assert.match(renderDoctorReport(report), /fail {4}capability unsupported-capability/);
+  assert.equal(capability?.fix, "Use a recommended CLI runner: codex, claude, or opencode.");
+  assert.match(
+    renderDoctorReport(report),
+    /^fail {4}capability unsupported-capability: [^\n]+\n {19}fix: Use a recommended CLI runner: codex, claude, or opencode\.\n/m,
+  );
 });
 
 test("doctor marks an arbitrary ACP launcher repository capability unknown", async (t) => {

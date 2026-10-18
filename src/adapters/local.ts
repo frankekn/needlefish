@@ -552,7 +552,9 @@ export function printDryRun(
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   if (summary.capability) {
-    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
+    const [first, ...rest] = summary.capability.detail.split("\n");
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${first}`);
+    for (const line of rest) lines.push(`  ${line}`);
   }
   process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -301,6 +301,9 @@ for (const runner of [undefined, "invalid-runner"]) {
     const plain = runCli(fixture, [...args, "--dry-run"], env);
     assert.equal(plain.status, 0, plain.stderr);
     assert.match(plain.stdout, /capability: unresolved;/);
+    if (runner === undefined) {
+      assert.match(plain.stdout, /\ncapability: unresolved; No supported model runner found on PATH\.\n {2}Install one:\n(?: {4}\S+: [^\n]+\n)+$/);
+    }
     const actual = runCli(fixture, args, env);
     assert.equal(actual.status, 1, actual.stderr);
     assert.equal(actual.stderr.trim(), `needlefish: ${capability.detail}`);
