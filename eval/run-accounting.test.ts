@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { review, reviewFailureStats } from "../src/core/review.js";
 import { loadFixture } from "./shared/fixture.js";
 import type { FixtureSpec } from "./shared/types.js";
 import { runOne } from "./run.js";
+import { isolateCodexTestHome } from "../src/shared/codex-runner-test-fixtures.js";
 
 const spec: FixtureSpec = {
 	id: "synthetic-call-accounting",
@@ -22,7 +23,14 @@ for (const mode of ["malformed", "format-retry", "runner-retry"] as const) {
 	test(`eval draw preserves ${mode} call accounting`, async (t) => {
 		const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-accounting-"));
 		const previous = { ...process.env };
-		t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
+		t.after(() => {
+			for (const name of Object.keys(process.env)) if (!(name in previous)) delete process.env[name];
+			Object.assign(process.env, previous);
+			rmSync(tmp, { recursive: true, force: true });
+		});
+		isolateCodexTestHome(t, tmp);
+		mkdirSync(path.join(tmp, ".codex"));
+		writeFileSync(path.join(tmp, ".codex", "auth.json"), JSON.stringify({ OPENAI_API_KEY: "SYNTHETIC_ACCOUNTING_ONLY" }), { mode: 0o600 });
 		const records = path.join(tmp, "calls.jsonl");
 		const bin = path.join(tmp, "codex.cjs");
 		writeFileSync(bin, `#!/usr/bin/env node
@@ -45,8 +53,8 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1]
 		Object.assign(process.env, { CODEX_BIN: bin, CODEX_RETRY_MS: "1", NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_EPHEMERAL_HOME: "1" });
 		delete process.env.NEEDLEFISH_NO_RETRY;
 		const draw = await runOne(spec, "codex", "synthetic-model", null, false, "SYNTHETIC-CANARY");
-		assert.equal(draw.score.formatOk, mode !== "malformed");
-		assert.equal(draw.calls, mode === "malformed" ? 4 : mode === "format-retry" ? 3 : 2);
+		assert.equal(draw.score.formatOk, mode !== "malformed", draw.score.error);
+		assert.equal(draw.calls, mode === "malformed" ? 4 : mode === "format-retry" ? 3 : 2, draw.score.error);
 		assert.equal(draw.retries, mode === "runner-retry" ? 1 : 0);
 		const rows = readFileSync(records, "utf8").trim().split("\n");
 		assert.equal(rows.length, draw.calls + draw.retries);
