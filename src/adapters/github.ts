@@ -411,7 +411,8 @@ interface CheckRound {
 	readonly prNumber: number;
 	readonly roundId: string;
 	readonly runId: string;
-	readonly recheck: boolean;
+	// Only adapter rounds write it; workflow receipts (author skip, caller retry) omit it.
+	readonly recheck?: boolean;
 }
 
 function parseCheckRound(raw: unknown): CheckRound | null {
@@ -425,7 +426,7 @@ function parseCheckRound(raw: unknown): CheckRound | null {
 	if (!isRecord(parsed) || parsed.v !== 2 || typeof parsed.prNumber !== "number" || !Number.isSafeInteger(parsed.prNumber) || parsed.prNumber < 1 || typeof parsed.roundId !== "string" ||
 		!parsed.roundId || typeof parsed.runId !== "string" ||
 		(parsed.recheck !== undefined && typeof parsed.recheck !== "boolean")) return null;
-	return { v: 2, prNumber: parsed.prNumber, roundId: parsed.roundId, runId: parsed.runId, recheck: parsed.recheck === true };
+	return { v: 2, prNumber: parsed.prNumber, roundId: parsed.roundId, runId: parsed.runId, ...(parsed.recheck !== undefined ? { recheck: parsed.recheck } : {}) };
 }
 
 function findingKey(f: Finding): FindingKey {
@@ -1798,7 +1799,8 @@ export async function runGithub(
 			if (deliveredCheckId !== null && typeof check.id === "number" && check.id <= deliveredCheckId) continue;
 			if (!isRecord(check.app) || check.app.id !== pending.appId || check.head_sha !== headSha || check.name !== "Needlefish") continue;
 			const prior = parseCheckRound(check.external_id);
-			if (!prior || prior.prNumber !== prNumber) continue;
+			// A workflow receipt is not a review attempt, so it spends no recovery budget.
+			if (!prior || prior.prNumber !== prNumber || prior.recheck === undefined) continue;
 			priorRounds.push(prior);
 			if (prior.recheck) break;
 		}

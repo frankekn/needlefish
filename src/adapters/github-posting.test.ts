@@ -4556,6 +4556,22 @@ test("other PR rounds sharing the head cannot consume this PR recovery budget", 
  assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
 });
 
+for (const [prNumber, kind, conclusion, title] of [
+ [197, "skip", "neutral", "Needlefish: skipped (author not trusted)"],
+ [198, "retry-required", "failure", "Needlefish: caller retry required"],
+] as const) {
+ test(`workflow ${kind} receipts on the head cannot consume the recovery budget`, async (t) => {
+  const fixture = untrustedFixture(t, prNumber, "FIRST_TIME_CONTRIBUTOR");
+  process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR = "1";
+  writeFileSync(fixture.checksState, JSON.stringify([1, 2].map(id => ({ id, name: "Needlefish", head_sha: fixture.headSha,
+   app: { id: 15368, slug: "github-actions" }, status: "completed", conclusion, output: { title },
+   external_id: JSON.stringify({ v: 2, prNumber, roundId: `${kind}-run-${id}`, runId: "run" }) }))));
+  await runGithub(fixture.repo, prNumber, { timeoutMs: 1000 });
+  assert.equal(runnerInvocationCount(fixture), 2);
+  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "success");
+ });
+}
+
 test("a newer round from another PR cannot invalidate this PR receipt", async (t) => {
  const fixture = setupFixture(t, { prNumber: 133, rawReview: defaultRawReview() });
  await runGithub(fixture.repo, 133, { timeoutMs: 1000 });
