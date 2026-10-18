@@ -294,8 +294,8 @@ function runnerCheck(overrides = {}) {
   };
 }
 
-test("installed runner auth misclassification uses this run check and Sol medium only on fallback", t => {
-  for (const out of ["", outcome({ outcome: "failure", operational: false })]) {
+test("legacy runner checks apply when a matching machine failure outcome is unavailable", t => {
+  for (const out of ["", "needlefish-outcome {bad", outcome({ outcome: "failure", operational: false, prNumber: 8, headSha: "a".repeat(40) }), outcome({ outcome: "failure", operational: false, prNumber: 7, headSha: "b".repeat(40) })]) {
     const result = runReviewScript(t, {
       primary: { out, err: "needlefish review failed: codex runner exited 1; likely cause: auth rejected", code: 1 },
       fallback: { out: outcome({ outcome: "verdict", verdict: "pass" }), err: "", code: 0 },
@@ -306,6 +306,16 @@ test("installed runner auth misclassification uses this run check and Sol medium
     assert.match(result.invocations[0], /^high .*--model primary-model/);
     assert.match(result.invocations[1], /^medium .*--model gpt-6\.1-sol/);
   }
+});
+
+test("a current non-operational outcome cannot be overridden by a legacy runner check", t => {
+  const result = runReviewScript(t, {
+    primary: { out: outcome({ outcome: "failure", operational: false, prNumber: 7, headSha: "a".repeat(40) }), err: "codex runner exited 1; stderr withheld", code: 1 },
+    fallback: { out: "PASS", err: "", code: 0 },
+    checks: [runnerCheck()],
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.invocations.length, 1);
 });
 
 test("check lookup stays closed for old runs, other apps, nonterminal checks and verdicts", t => {
