@@ -243,6 +243,7 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["leading-space quote", false, (_r, f) => { f.quote = " source"; }],
 		["trailing-space quote", false, (_r, f) => { f.quote = "source "; }],
 		["NUL quote", false, (_r, f) => { f.quote = "source\u0000"; }],
+		["inner NUL quote", false, (_r, f) => { f.quote = "sou\u0000rce"; }],
 		["multi-line quote", false, (_r, f) => { f.quote = "a\nb"; }],
 		["unknown runner", false, (_r, _f, s) => { s.runner = "gpt"; }],
 		["zero attempts", false, (_r, _f, s) => { s.attempts = 0; }],
