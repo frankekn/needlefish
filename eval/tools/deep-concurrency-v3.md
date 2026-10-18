@@ -31,7 +31,7 @@ Create a private admission file with these fields. Use the values from that iden
 }
 ```
 
-The `fake-offline` lane exists for the executable fake controls. It uses `fake-offline` as the model, admits the fake executable's version, and permits shorter timeout and retry settings. Those results cannot qualify the native lane. The native lane uses the unchanged v2 timeout and retry values.
+The `fake-offline` lane exists for the executable fake controls. It uses `fake-offline` as the model, admits the fake executable's version, and permits shorter timeout and retry settings. Those results cannot qualify the native lane. Fake controls record capacity but do not enforce the native eight-core timing gate, so they can run on smaller CI hosts. `nativeCapacityEnforced` makes that distinction explicit. The native lane uses the unchanged v2 timeout and retry values.
 
 Start the command in its own process group and retain its creation identity. Use a private, previously absent output directory outside the source checkout. The command refuses an existing directory and never resumes or replaces whole-review draws.
 

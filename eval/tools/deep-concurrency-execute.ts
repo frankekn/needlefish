@@ -97,6 +97,10 @@ export function capacity() {
 			(platform() === "darwin" ? pressure === "1" : platform() === "linux" && Number(pressure) === 0) };
 }
 
+export function mustWaitForCapacity(lane: ExecutionAdmission["lane"], sample: Pick<ReturnType<typeof capacity>, "ok">): boolean {
+	return lane === "OpenAI-ChatGPT-native" && !sample.ok;
+}
+
 interface CapturedFixture {
 	readonly bundle: Bundle;
 	readonly identity: { readonly base: string; readonly head: string; readonly baseTree: string; readonly headTree: string;
@@ -172,6 +176,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 	assert.ok(relative === ".." || relative.startsWith(`..${path.sep}`), "campaign directory must be outside source checkout");
 	mkdirSync(directory, { mode: 0o700 });
 	const begin = process.hrtime.bigint();
+	const startedAt = new Date().toISOString();
 	const canary = randomUUID();
 	write(path.join(directory, "admission.json"), admission);
 	write(path.join(directory, "identity.json"), executionIdentity());
@@ -184,16 +189,19 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 	let activeSlot: { index: number; startedNs: bigint } | null = null;
 	const cancel = () => { stop = "CANCELLED"; running?.stop(); };
 	cancelSignal?.addEventListener("abort", cancel, { once: true });
-	const unregister = registerTerminationFinalizer(async () => { cancel(); await runningDone; persist(); });
-	function persist() {
+	const unregister = registerTerminationFinalizer(async () => { cancel(); await runningDone; persist(true); });
+	function persist(terminal = false) {
+		const observedNs = process.hrtime.bigint();
+		const observedAt = new Date().toISOString();
 		const arms = [3, 7].map(arm => ({ arm, planned: 12, started: slots.filter(s => s.deepConcurrency === arm && s.elapsedMs !== null).length,
 			completed: slots.filter(s => s.deepConcurrency === arm && s.outcome === "COMPLETED").length,
 			nativeAttempted: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeAttempted" in s.detail && typeof s.detail.nativeAttempted === "number" ? s.detail.nativeAttempted : 0), 0),
 			nativeDrained: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeDrained" in s.detail && typeof s.detail.nativeDrained === "number" ? s.detail.nativeDrained : 0), 0),
 			nativeEnded: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeEnded" in s.detail && typeof s.detail.nativeEnded === "number" ? s.detail.nativeEnded : 0), 0),
 			needsHuman: slots.filter(s => s.deepConcurrency === arm && s.detail && typeof s.detail === "object" && "verdict" in s.detail && s.detail.verdict === "needs_human").length }));
-		const report = { protocol: admission.protocol, gateClass: "R", lane: admission.lane, stop, slots, arms,
-			supervisorMs: Number(process.hrtime.bigint() - begin) / 1e6, pairedReviewTimings: pairedTimingSummary(slots),
+		const report = { startedAt, observedAt, endedAt: terminal ? observedAt : null, monotonicStartNs: begin.toString(), monotonicObservedNs: observedNs.toString(),
+			nativeCapacityEnforced: admission.lane === "OpenAI-ChatGPT-native", protocol: admission.protocol, gateClass: "R", lane: admission.lane, stop, slots, arms,
+			supervisorMs: Number(observedNs - begin) / 1e6, pairedReviewTimings: pairedTimingSummary(slots),
 			timingDefinitions: { elapsedMs: "supervised slot wall duration including child startup", reviewDurationMs: "terminal.durationMs from monotonic review API entry to terminal", supervisorMs: "entire campaign including capture, capacity waits and cleanup", nativeServiceMs: "native process spawn to close", wrapperServiceMs: "recorder entry to native close" },
 			equalWorkSpeedup: "unavailable: descriptive evidence only; limiter and independent study acceptance required" };
 		write(path.join(directory, "report.json"), report);
@@ -206,7 +214,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 			if (stop || cancelSignal?.aborted) { stop ??= "CANCELLED"; break; }
 			if (Number(process.hrtime.bigint() - begin) / 1e6 >= study.stopping.maximumCampaignMs) { stop = "CAMPAIGN_DEADLINE"; break; }
 			const waitStart = performance.now();
-			while (!capacity().ok) {
+			while (mustWaitForCapacity(admission.lane, capacity())) {
 				if (Number(process.hrtime.bigint() - begin) / 1e6 >= study.stopping.maximumCampaignMs) { stop = "CAMPAIGN_DEADLINE"; break; }
 				if (performance.now() - waitStart >= study.capacity.maximumWaitMs) { stop = "CAPACITY_WAIT_EXCEEDED"; break; }
 				if (cancelSignal?.aborted) { stop = "CANCELLED"; break; }
@@ -229,6 +237,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 			write(workerInput, { bundle: snapshot.bundle, fixtureId: slot.fixtureId, slotDirectory, canary, model: admission.lane === "fake-offline" ? "fake-offline" : study.lane.model,
 				reasoningEffort: study.lane.effort });
 			const before = process.hrtime.bigint();
+			const slotStartedAt = new Date().toISOString();
 			activeSlot = { index, startedNs: before };
 			let capacityLost = false;
 			let methodError: string | null = null;
@@ -238,7 +247,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 				try {
 					const counters = capacity(); observations.push(counters);
 					appendFileSync(path.join(slotDirectory, "capacity.jsonl"), JSON.stringify(counters) + "\n");
-					if (!counters.ok) capacityLost = true;
+					if (mustWaitForCapacity(admission.lane, counters)) capacityLost = true;
 					assertAdmission(admission); assertSnapshot(snapshot);
 					if (capacityLost) { methodError = "capacity lost during review"; }
 					if (existsSync(path.join(directory, "CANCEL"))) cancel();
@@ -261,8 +270,9 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 				runningDone = worker;
 				processResult = await worker;
 			} finally { clearInterval(timer); running = undefined; observe(); }
-			const elapsedMs = Number(process.hrtime.bigint() - before) / 1e6;
-			write(path.join(slotDirectory, "supervisor-terminal.json"), { ...processResult, elapsedMs, observations: observations.length });
+			const after = process.hrtime.bigint();
+			const elapsedMs = Number(after - before) / 1e6;
+			write(path.join(slotDirectory, "supervisor-terminal.json"), { ...processResult, startedAt: slotStartedAt, endedAt: new Date().toISOString(), monotonicStartNs: before.toString(), monotonicEndNs: after.toString(), elapsedMs, observations: observations.length });
 			assert.ok(pgid);
 			if (groupAlive(pgid)) methodError = "worker group did not drain";
 			const detail = existsSync(path.join(slotDirectory, "terminal.json")) ? json(path.join(slotDirectory, "terminal.json")) : null;
@@ -348,7 +358,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 			detail: { error: error instanceof Error ? error.message : String(error) } };
 		write(path.join(directory, "method-error.json"), { error: error instanceof Error ? error.message : String(error) }); }
 	finally { cancelSignal?.removeEventListener("abort", cancel); unregister(); }
-	return persist();
+	return persist(true);
 }
 
 async function runSlot(input: unknown) {
@@ -390,7 +400,7 @@ async function runSlot(input: unknown) {
 	const complete = deep?.stage === "deep" && deep.done === deep.total && deep.failed === 0 && !!result && !result.traceDeliveryFailed;
 	const outcome = safety || scored.cheatDetected ? "ERROR" : error ? /timeout|deadline|ETIMEDOUT/.test(error) ? "TIMEOUT" : "ERROR"
 		: complete && deep.total < 7 ? "WORKLOAD_UNDERFILLED" : complete ? "COMPLETED" : "PARTIAL";
-	write(path.join(directory, "terminal.json"), { outcome, durationMs, monotonicStartNs: begin.toString(), monotonicEndNs: process.hrtime.bigint().toString(),
+	write(path.join(directory, "terminal.json"), { outcome, censored: outcome === "TIMEOUT", timeoutLimits: { perCallMs: Number(process.env.NEEDLEFISH_TIMEOUT_MS), wholeReviewMs: Number(process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS) }, durationMs, monotonicStartNs: begin.toString(), monotonicEndNs: process.hrtime.bigint().toString(),
 		verdict: result?.verdict ?? null, result, error: error ?? null, score: scored, deep: deep ?? null, safety });
 }
 

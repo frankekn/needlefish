@@ -6,10 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { runManagedRunnerProcess } from "../../src/shared/runner-process";
 import { pairedSchedule } from "./deep-concurrency";
-import { executionIdentity, executeStudy, parseAdmission, pairedTimingSummary } from "./deep-concurrency-execute";
+import { executionIdentity, executeStudy, parseAdmission, pairedTimingSummary, mustWaitForCapacity } from "./deep-concurrency-execute";
 
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-function setup(t: { after: (fn: () => void) => void }, scenario: string) {
+function setup(t: { readonly name: string; after: (fn: () => void) => void }, scenario: string) {
 	const directory = mkdtempSync(path.join(tmpdir(), "needlefish-paired-proof-"));
 	const previous = { ...process.env };
 	for (const key of Object.keys(process.env)) if (/PROXY|OPENAI_BASE_URL|NEEDLEFISH_.*CONNECTION|CODEX_PUBLIC/.test(key)) delete process.env[key];
@@ -63,7 +63,6 @@ process.stdin.on('end', () => {
 `);
 	chmodSync(native, 0o700);
 	const identity = executionIdentity();
-	writeFileSync(path.join(directory, "arm"), "3");
 	const admission = parseAdmission({ protocol: "issue193-deep-concurrency-v3", operatorApproved: true, exclusiveCapacity: true,
 		sourceCommit: identity.sourceCommit, projectionSha256: identity.projectionSha256, nodeSha256: identity.nodeSha256,
 		command: native, commandSha256: hash(readFileSync(native)), runnerVersion: "offline-native 1.0", lane: "fake-offline" });
@@ -71,8 +70,11 @@ process.stdin.on('end', () => {
 		const evidence = process.env.NEEDLEFISH_PAIRED_TEST_EVIDENCE_DIR;
 		if (evidence && existsSync(path.join(directory,"campaign"))) {
 			mkdirSync(evidence, { recursive: true });
-			const target = path.join(evidence, scenario + "-final");
+			const target = path.join(evidence, scenario + "-" + hash(Buffer.from(t.name)).slice(0,8));
+			assert.equal(existsSync(target),false,"control evidence directory must be new");
 			cpSync(path.join(directory,"campaign"), target, { recursive: true });
+			writeFileSync(path.join(target,"control-name.json"), JSON.stringify({name:t.name,scenario}));
+			writeFileSync(path.join(target,"fake-native.cjs"), readFileSync(native));
 			if (existsSync(path.join(directory,"events.jsonl"))) writeFileSync(path.join(target,"fake-events.jsonl"), readFileSync(path.join(directory,"events.jsonl")));
 		}
 		for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
@@ -82,18 +84,15 @@ process.stdin.on('end', () => {
 	return { directory, admission };
 }
 
-function retain(campaign: string, name: string) {
-	const destination = process.env.NEEDLEFISH_PAIRED_TEST_EVIDENCE_DIR;
-	if (destination) { mkdirSync(destination, { recursive: true }); cpSync(campaign, path.join(destination, name), { recursive: true }); }
-}
-
 
 test("executor drives all 24 registered reviews through production API with stable captured Git objects and 3/7 barriers", async t => {
 	const { directory, admission } = setup(t, "complete");
 	const campaign = path.join(directory, "campaign");
-	writeFileSync(path.join(directory, "arm"), "3");
 	const report = await executeStudy({ directory: campaign, admission });
 	assert.equal(report.stop, null, JSON.stringify(report));
+	assert.equal(report.nativeCapacityEnforced, false);
+	assert.ok(report.endedAt);
+	assert.ok(BigInt(report.monotonicObservedNs) > BigInt(report.monotonicStartNs));
 	assert.deepEqual(report.slots.map(slot => slot.outcome), Array(24).fill("COMPLETED"));
 	assert.deepEqual(report.arms.map(arm => [arm.planned, arm.started, arm.completed, arm.nativeAttempted, arm.nativeEnded, arm.nativeDrained]), [[12,12,12,108,108,108],[12,12,12,108,108,108]]);
 	for (const slot of report.slots) {
@@ -117,13 +116,11 @@ test("executor drives all 24 registered reviews through production API with stab
 		if (event.kind === "critic") assert.deepEqual({active, maximum, started, ended}, {active:0, maximum:report.slots[reviewIndex].deepConcurrency, started:7, ended:7});
 	}
 	assert.equal(reviewIndex, 23);
-	retain(campaign, "full24");
 	t.diagnostic(JSON.stringify({planned:24, completed:24, nativeAttempts:216, barrierMaximum:[3,7], providerCalls:0}));
 });
 
 test("underfill stops only after completed whole review and preserves denominator and all native attempts", async t => {
 	const { directory, admission } = setup(t, "underfill");
-	writeFileSync(path.join(directory, "arm"), "1");
 	const report = await executeStudy({ directory: path.join(directory, "campaign"), admission });
 	assert.equal(report.stop, "WORKLOAD_UNDERFILLED");
 	assert.deepEqual(report.slots.map(slot => slot.outcome), ["WORKLOAD_UNDERFILLED", ...Array(23).fill("NOT_STARTED_EARLY_STOP")]);
@@ -133,7 +130,6 @@ test("underfill stops only after completed whole review and preserves denominato
 	assert.equal(terminal.deep.done, 1);
 	const attempts = JSON.parse(readFileSync(path.join(directory, "campaign", report.slots[0].slot, "attempt-index.json"), "utf8"));
 	assert.deepEqual(attempts.map((attempt: {start:{kind:string}}) => attempt.start.kind).sort(), ["critic","deep","map"]);
-	retain(path.join(directory,"campaign"), "underfill");
 });
 
 test("admission rejects absent authorization, identity drift, unsupported route and reused output", async t => {
@@ -165,11 +161,11 @@ for (const [scenario, expected] of [["rate-limit", "ERROR"], ["invalid", "ERROR"
 		assert.deepEqual(report.slots.slice(2).map(slot => slot.outcome), Array(22).fill("NOT_STARTED_EARLY_STOP"));
 		assert.equal(report.stop, "CANCELLED");
 		const attempts = JSON.parse(readFileSync(path.join(campaign, report.slots[0].slot, "attempt-index.json"), "utf8"));
+		if (scenario === "timeout") assert.equal(JSON.parse(readFileSync(path.join(campaign,report.slots[0].slot,"terminal.json"),"utf8")).censored,true);
 		if (scenario === "rate-limit") assert.equal(attempts[0].provider429, "observed_structured_status_429");
 		assert.equal(attempts.length, scenario === "invalid" ? 2 : scenario === "partial" ? 10 : scenario === "needs-human" ? 9 : 1);
 		for (const attempt of attempts) { assert.ok(attempt.start.birth); assert.ok(attempt.end); }
 		if (scenario === "needs-human" || scenario === "partial") assert.equal(report.arms[0].needsHuman, 1);
-		retain(campaign, scenario);
 	});
 }
 
@@ -204,13 +200,11 @@ for (const scenario of ["cancel", "drift", "lost-evidence"] as const) {
 		assert.equal(report.slots[0].outcome, scenario === "cancel" ? "CANCELLED" : "METHOD_ERROR");
 		assert.deepEqual(report.slots.slice(1).map(slot => slot.outcome), Array(23).fill("NOT_STARTED_EARLY_STOP"));
 		assert.ok(performance.now() - begin < 10000, "bounded stop must not wait for native 60-second hold");
-		retain(campaign, scenario);
 	});
 }
 
 test("top-level execution CLI retains the underfilled artifact and returns nonzero", async t => {
 	const { directory, admission } = setup(t, "underfill");
-	writeFileSync(path.join(directory, "arm"), "1");
 	const admissionFile = path.join(directory, "admission.json");
 	writeFileSync(admissionFile, JSON.stringify(admission));
 	const child = await runManagedRunnerProcess({ command: process.execPath,
@@ -222,7 +216,6 @@ test("top-level execution CLI retains the underfilled artifact and returns nonze
 	assert.equal(report.stop, "WORKLOAD_UNDERFILLED");
 	assert.ok(Array.isArray(report.slots));
 	assert.equal(report.slots.length, 24);
-	retain(path.join(directory,"campaign"), "cli-underfill");
 });
 
 
@@ -245,4 +238,11 @@ test("descriptive paired timings use monotonic review duration and exclude incom
 	assert.equal(summary.maximumMs, -10);
 	assert.equal(summary.differences?.length, 12);
 	assert.deepEqual(pairedTimingSummary(slots.slice(1)), {kind:"unavailable"});
+});
+
+
+test("low capacity cannot admit a native study and does not block offline scheduler controls", () => {
+	assert.equal(mustWaitForCapacity("OpenAI-ChatGPT-native", {ok:false}), true);
+	assert.equal(mustWaitForCapacity("OpenAI-ChatGPT-native", {ok:true}), false);
+	assert.equal(mustWaitForCapacity("fake-offline", {ok:false}), false);
 });
