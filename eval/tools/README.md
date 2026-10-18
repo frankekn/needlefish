@@ -132,6 +132,11 @@ inaccessible identities, partial collections and conflicting receipts remain
 in the adoption denominator with an explicit unknown reason. The original
 severity, category, fate and author are unchanged.
 
+The receipt check ID must equal the job's independently returned `check_run_url`
+ID. A separate self-created Needlefish check remains unknown even when the named
+review job exists in the same run. Run/job names and receipt claims alone do not
+attest that association.
+
 Joined rows preserve the receipt's runtime provenance, unknown dispatcher role
 and unqualified status. Producer-attested does not mean platform-attested or
 qualified. The report groups adoption and latency by repository, lane, severity

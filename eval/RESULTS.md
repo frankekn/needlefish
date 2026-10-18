@@ -2416,3 +2416,25 @@ candidate containment, system-blocking residual restoration and bounded re-asks.
 It requires a new Class R source/method/criteria seal and admission. Local
 synthetic tests do not demonstrate CLIProxyAPI schema support, model quality,
 formal R/D qualification or live-canary success.
+
+## 2026-10-18: call accounting compatibility, no evaluation run
+
+New reports record `callAccountingVersion: 2`. Calls and retries retain logical
+calls emitted by failed reviews. A successful fallback also retains the earlier
+routes' stats, including their critic and total pass time. Logical calls and
+runner attempts are not native process completions.
+
+Resume, direct comparison and weekly comparison refuse mixed accounting
+versions. Unrecorded or unsupported versions withhold metrics; their method is
+not inferred from the current package or their age. Explicit version 1 reports
+can compare with version 1, and version 2 reports with version 2. Historical
+unversioned reports remain available for inspection but cannot seed a resume or
+comparison.
+Latest tier-1 miss alerts remain active even when the previous report cannot
+support a comparison.
+
+Historical reports and the 4f95 NOT_PASS/EARLY_ABORTED evidence are unchanged.
+This metadata repair does not alter model inputs, scoring arithmetic, scorer
+identity or fixture answers. The combined pipeline change remains Class R and
+still requires its current-source gate before merge. No evaluation campaign or
+live-canary result is claimed by this entry.

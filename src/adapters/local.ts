@@ -635,7 +635,9 @@ export function printDryRun(
   lines.push(`binaryOnlyFastPath: ${summary.binaryOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   if (summary.capability) {
-    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
+    const [first, ...rest] = summary.capability.detail.split("\n");
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${first}`);
+    for (const line of rest) lines.push(`  ${line}`);
   }
   if (summary.capabilities) summary.capabilities.forEach((capability, index) => lines.push(`route ${index + 1}: ${capability?.detail ?? "docs-only"}`));
   process.stdout.write(`${lines.join("\n")}\n`);

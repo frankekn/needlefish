@@ -275,16 +275,16 @@ test("--dry-run with a nested --repo collects root-relative tracked and untracke
 for (const runner of [undefined, "invalid-runner"]) {
   test(`dry-run prints its bundle when runner selection is unresolved (${runner ?? "auto"})`, (t) => {
     const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
-    const gitOnlyBin = path.join(fixture.tmp, "git-only-bin");
-    mkdirSync(gitOnlyBin);
+    const runnerlessBin = path.join(fixture.tmp, "runnerless-bin");
+    mkdirSync(runnerlessBin);
     const commands = process.platform === "linux" ? ["git", "flock", "sh", "true"] : ["git"];
     for (const command of commands) {
       const resolved = spawnSync("which", [command], { encoding: "utf8" });
       assert.equal(resolved.status, 0, resolved.stderr);
-      symlinkSync(resolved.stdout.trim(), path.join(gitOnlyBin, command));
+      symlinkSync(resolved.stdout.trim(), path.join(runnerlessBin, command));
     }
     const env = {
-      PATH: gitOnlyBin,
+      PATH: runnerlessBin,
       NEEDLEFISH_RUNNER: runner,
       CODEX_BIN: "codex",
       CLAUDE_BIN: "claude",
@@ -301,6 +301,9 @@ for (const runner of [undefined, "invalid-runner"]) {
     const plain = runCli(fixture, [...args, "--dry-run"], env);
     assert.equal(plain.status, 0, plain.stderr);
     assert.match(plain.stdout, /capability: unresolved;/);
+    if (runner === undefined) {
+      assert.match(plain.stdout, /\ncapability: unresolved; No supported model runner found on PATH\.\n {2}Install one:\n(?: {4}\S+: [^\n]+\n)+$/);
+    }
     const actual = runCli(fixture, args, env);
     assert.equal(actual.status, 1, actual.stderr);
     assert.equal(actual.stderr.trim(), `needlefish: ${capability.detail}`);
@@ -337,7 +340,6 @@ test("HTTP dry-run renders its unsupported decision before rejecting the same sm
   assert.equal(existsSync(fixture.marker), false);
   assert.equal(existsSync(cacheFile(fixture)), false);
 });
-
 
 test("ACP dry-run reports unknown repository capability without launching the agent", (t) => {
   const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);

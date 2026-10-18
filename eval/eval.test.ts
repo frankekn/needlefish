@@ -16,6 +16,7 @@ import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score"
 import { scorerHash } from "./shared/scorer-hash";
 import { RunnerOperationalError } from "../src/shared/codex";
 import { ANTICHEAT_VERSION, type Expected, type FixtureSpec, type Report } from "./shared/types";
+import type { CallAccountingMetadata } from "./shared/call-accounting";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import renameSourceIntoDocs from "./fixtures/rename-source-into-docs/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
@@ -1255,13 +1256,14 @@ function resumeReport(
     readonly runnerEnvironment?: string;
     readonly runnerVersion?: string;
   }>,
-): Report & {
+): Report & CallAccountingMetadata & {
   readonly provider?: string;
   readonly route?: string;
   readonly runnerEnvironment?: string;
   readonly runnerVersion?: string;
 } {
   return {
+    callAccountingVersion: 2,
     promptHash: promptHash(),
     runner: "codex",
     model: null,
@@ -2391,7 +2393,7 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
     assert.equal(unresolved.skipped, 0);
     writeFileSync(
       resumePath,
-      JSON.stringify(resumeReport(spec, {
+      JSON.stringify(Object.assign(resumeReport(spec, {
         anticheatVersion: 2,
         model: "test-model",
         effort: "medium",
@@ -2401,7 +2403,7 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
         runnerEnvironment: runnerEnvironment(parseArgs([
           "--model", "test-model", "--effort", "medium",
         ])),
-      })),
+      }), { callAccountingVersion: 2 })),
     );
     const resumed = resumeSlots(parseArgs([
       "--draws", "1", "--resume", resumePath,
@@ -2513,6 +2515,26 @@ test("compare: refuses missing or mismatched scorerHash", () => {
   }
 });
 
+test("compare: refuses different call accounting versions", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-accounting-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const current = Object.assign(resumeReport(holdoutSpec("accounting-compare", false), { anticheatVersion: 2 }), { callAccountingVersion: 2 } satisfies CallAccountingMetadata);
+  try {
+    for (const version of [undefined, 1, 3]) {
+      writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, callAccountingVersion: version }));
+      assert.throws(() => compare(baselinePath, current), /call accounting version mismatch/);
+    }
+    const unrecorded = structuredClone(current);
+    Reflect.deleteProperty(unrecorded, "callAccountingVersion");
+    writeFileSync(baselinePath, JSON.stringify({ ...unrecorded, baseline: true }));
+    assert.throws(() => compare(baselinePath, unrecorded), /call accounting version mismatch/);
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    assert.doesNotThrow(() => compare(baselinePath, current));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("compare: refuses cross-gate-class reports", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-gate-class-compare-"));
   const baselinePath = path.join(dir, "baseline.json");
@@ -2564,7 +2586,8 @@ test("compare: rejects reports from another anti-cheat generation", () => {
     retries: 0,
   });
   // Complete fixture × draw coverage so the success path reaches metrics.
-  const current: Report = {
+  const current: Report & CallAccountingMetadata = {
+    callAccountingVersion: 2,
     promptHash: "prompt-hash",
     runner: "codex",
     model: null,

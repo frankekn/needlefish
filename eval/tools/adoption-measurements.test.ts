@@ -14,7 +14,7 @@ const contract: MeasurementContract = { workflowPath: ".github/workflows/review.
 const repo = "frankekn/needlefish";
 const sha = "a".repeat(40), oldSha = "b".repeat(40);
 function receipt(head = sha, reviewId = 101): MeasurementV1 {
-  return { ...newMeasurement({ repository: repo, prNumber: 7, targetHeadSha: head, workflow: { status: "recorded", runId: "10", runAttempt: 2, jobKey: "review" } }),
+  return { ...newMeasurement({ repository: repo, prNumber: 7, targetHeadSha: head, workflow: { status: "recorded", runId: head === oldSha ? "9" : "10", runAttempt: 2, jobKey: "review" } }),
     summaryReviewId: 100, inlineReviewIds: [reviewId], outcome: "verdict", verdict: "pass", delivery: "delivered",
     pipeline: { status: "observed", clock: "producer_monotonic", elapsedMs: 2500 },
     runtime: { status: "recorded", runner: "codex", model: { status: "operator_attested", value: head === sha ? "new-model" : "old-model" }, effort: { status: "known", value: "high" }, coreVersion: { status: "unknown" }, qualification: { matchStatus: "unqualified" } } };
@@ -26,10 +26,13 @@ function finding(head = sha, reviewId = 101, commentId = 1): AdoptionRow {
 function api(records: readonly MeasurementV1[], extraChecks: readonly Record<string, unknown>[] = []): GithubRead {
   return (endpoint) => {
     if (endpoint.endsWith("/actions/workflows/review.yml")) return { id: 44, path: contract.workflowPath };
-    if (endpoint.includes("/commits/")) return { total_count: records.length + extraChecks.length, check_runs: [...records.filter((r) => endpoint.includes(r.targetHeadSha)).map((r, index) => ({ id: 30 + index, name: "Needlefish", head_sha: r.targetHeadSha, status: "completed", conclusion: "success", started_at: "2026-10-10T12:00:00Z", completed_at: "2026-10-10T12:00:20Z", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 7, roundId: r.invocationId, runId: "10" }), output: { text: JSON.stringify(r) } })), ...extraChecks] };
-    if (endpoint.endsWith("/attempts/2")) return { id: 10, run_attempt: 2, workflow_id: 44, path: contract.workflowPath, repository: { full_name: repo }, head_sha: "c".repeat(40), created_at: "2026-10-10T12:00:00Z" };
-    if (endpoint.includes("/jobs?")) return { total_count: 1, jobs: [{ id: 20, run_id: 10, run_attempt: 2, name: contract.jobName, status: "completed", created_at: "2026-10-10T12:00:01Z", started_at: "2026-10-10T12:00:11Z", check_run_url: `https://api.github.com/repos/${repo}/check-runs/21` }] };
-    throw new Error("unexpected endpoint");
+    if (endpoint.includes("/commits/")) return { total_count: records.length + extraChecks.length, check_runs: [...records.map((record, index) => ({ record, index })).filter(({ record }) => endpoint.includes(record.targetHeadSha)).map(({ record, index }) => ({ id: 30 + index, name: "Needlefish", head_sha: record.targetHeadSha, status: "completed", conclusion: "success", started_at: "2026-10-10T12:00:00Z", completed_at: "2026-10-10T12:00:20Z", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 7, roundId: record.invocationId, runId: record.workflow.status === "recorded" ? record.workflow.runId : null }), output: { text: JSON.stringify(record) } })), ...extraChecks] };
+    const match = /\/actions\/runs\/([1-9]\d*)\/attempts\/2(?:\/jobs\?|$)/.exec(endpoint);
+    const index = match ? records.findIndex((record) => record.workflow.status === "recorded" && record.workflow.runId === match[1]) : -1;
+    if (index < 0 || !match) throw new Error("unexpected endpoint");
+    const runId = Number(match[1]);
+    if (endpoint.includes("/jobs?")) return { total_count: 1, jobs: [{ id: 20 + index, run_id: runId, run_attempt: 2, name: contract.jobName, status: "completed", created_at: "2026-10-10T12:00:01Z", started_at: "2026-10-10T12:00:11Z", check_run_url: `https://api.github.com/repos/${repo}/check-runs/${30 + index}` }] };
+    return { id: runId, run_attempt: 2, workflow_id: 44, path: contract.workflowPath, repository: { full_name: repo }, head_sha: "c".repeat(40), created_at: "2026-10-10T12:00:00Z" };
   };
 }
 
@@ -51,7 +54,8 @@ test("historical head and original inline review retain lane despite an edited s
 });
 
 test("same-head rounds claiming the same inline review are ambiguous, not latest wins", () => {
-  const joined = enrichAdoptionRows([finding()], contract, api([receipt(), receipt()]));
+  const second: MeasurementV1 = { ...receipt(), workflow: { status: "recorded", runId: "11", runAttempt: 2, jobKey: "review" } };
+  const joined = enrichAdoptionRows([finding()], contract, api([receipt(), second]));
   assert.equal(joined[0].measurement?.status, "unknown");
   assert.equal(joined[0].measurement?.status === "unknown" && joined[0].measurement.reason, "ambiguous_review_binding");
 });
@@ -96,7 +100,7 @@ test("actual collector CLI and weekly replay use GET-only exact historical joins
   const old = receipt(oldSha, 99), current = receipt();
   const comments = [[oldSha, 99], [sha, 101], [oldSha, 100]].map(([head, reviewId], index) => ({ isOutdated: index === 0, isResolved: false, path: "src/a.ts", comments: { nodes: [{ databaseId: index + 1, originalCommit: { oid: head }, pullRequestReview: { databaseId: reviewId }, author: { login: "github-actions" }, body: "**P2 (validation): Literal finding**", createdAt: "2026-10-10T12:00:00Z" }] } }));
   const graph = { data: { repository: { pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ number: 7, state: "MERGED", merged: true, updatedAt: "2026-10-10T12:00:00Z", reviews: { pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [{ id: "edited-summary", body: "latest summary is irrelevant" }] }, reviewThreads: { pageInfo: { hasNextPage: false }, nodes: comments } }] } } } };
-  const endpoints = [`repos/${repo}/actions/workflows/review.yml`, ...[oldSha, sha].map((head) => `repos/${repo}/commits/${head}/check-runs?check_name=Needlefish&filter=all&per_page=100&page=1`), `repos/${repo}/actions/runs/10/attempts/2`, `repos/${repo}/actions/runs/10/attempts/2/jobs?per_page=100&page=1`];
+  const endpoints = [`repos/${repo}/actions/workflows/review.yml`, ...[oldSha, sha].map((head) => `repos/${repo}/commits/${head}/check-runs?check_name=Needlefish&filter=all&per_page=100&page=1`), ...[9, 10].flatMap((runId) => [`repos/${repo}/actions/runs/${runId}/attempts/2`, `repos/${repo}/actions/runs/${runId}/attempts/2/jobs?per_page=100&page=1`])];
   const responses = Object.fromEntries(endpoints.map((endpoint) => [endpoint, api([old, current])(endpoint)]));
   const log = path.join(tmp, "calls.jsonl");
   writeFileSync(path.join(tmp, "gh"), `#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(args)+'\\n');const responses=${JSON.stringify(responses)};if(args[0]!=='api')process.exit(8);if(args[1]==='graphql'){process.stdout.write(${JSON.stringify(JSON.stringify(graph))});}else{if(args.length!==2||!(args[1] in responses))process.exit(9);process.stdout.write(JSON.stringify(responses[args[1]]));}\n`);

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCompleteReport } from "./shared/report-completeness";
+import { callAccountingError, type CallAccountingMetadata } from "./shared/call-accounting";
 import {
   hasConsistentCheatDetection,
   hasCurrentScorer,
@@ -10,7 +11,7 @@ import {
 } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
-type WeeklyReport = Report & ReportAttestation;
+type WeeklyReport = Report & ReportAttestation & CallAccountingMetadata;
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
 // ~20 positives, one fixture is ~5pp of recall and single draws flicker, so
@@ -94,13 +95,14 @@ export function compareWeekly(
   const latestCheatCount: number | undefined =
     latest.aggregates.cheatDetectedCount;
   const latestEnvironmentError = runnerEnvironmentAttestationError(latest);
+  const latestAccountingError = callAccountingError(latest, latest);
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
     !hasCurrentScorer(latest) ||
     typeof latestCheatCount !== "number" ||
     latestCheatCount !== 0 ||
     !hasConsistentCheatDetection(latest) ||
-    latestEnvironmentError !== null
+    latestEnvironmentError !== null || latestAccountingError !== null
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
     // detection never covered (or never recorded) these draws, so no metric
@@ -110,7 +112,7 @@ export function compareWeekly(
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report is unguarded or invalid (${latestEnvironmentError ?? "anti-cheat/scorer/detection metadata"}) — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report is unguarded or invalid (${latestEnvironmentError ?? latestAccountingError ?? "anti-cheat/scorer/detection metadata"}); metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -140,6 +142,8 @@ export function compareWeekly(
   }
 
   if (prev) {
+    const accountingError = callAccountingError(prev, latest);
+    if (accountingError) return { alert: reasons.length > 0, reasons: [...reasons, `note: ${accountingError}; skipping regression comparison`] };
     if (
       !sameWeeklyLane(prev, latest) ||
       prev.promptHash !== latest.promptHash ||
