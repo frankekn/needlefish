@@ -52,7 +52,7 @@ function pull({
 	};
 }
 
-function runStep(script, env, { pr = pull(), checkRuns = [] } = {}) {
+function runStep(script, env, { pr = pull(), checkRuns = [], shell = "bash" } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-author-trust-"));
 	const fakeBin = join(root, "fake-bin");
 	const ghLog = join(root, "gh.log");
@@ -96,7 +96,7 @@ esac
 `,
 	);
 	chmodSync(join(fakeBin, "gh"), 0o755);
-	const result = spawnSync("bash", ["-eo", "pipefail", "-c", script], {
+	const result = spawnSync(shell, ["-eo", "pipefail", "-c", script], {
 		encoding: "utf8",
 		env: {
 			...process.env,
@@ -546,3 +546,15 @@ for (const [name, script, env] of [
     assert.deepEqual(result.posts, [], result.log);
   });
 }
+
+
+test("composite author gate works in system Bash for event and API paths", () => {
+  for (const eventHead of [HEAD, ""]) {
+    const result = runStep(trustStep.run, actionEnv({ association: "NONE", eventHead }), {
+      pr: pull({ association: "NONE" }), shell: "/bin/bash",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.outputs.skip, "true");
+    assert.equal(result.posts.length, 1, result.log);
+  }
+});

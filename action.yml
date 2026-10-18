@@ -71,7 +71,8 @@ runs:
             echo "::error::could not read PR #$pr metadata" >&2
             exit 1
           fi
-          mapfile -t pr_fields <<< "$pr_meta"
+          pr_fields=()
+          while IFS= read -r field; do pr_fields+=("$field"); done <<< "$pr_meta"
           head="${pr_fields[0]:-}"
           author_association="${pr_fields[1]:-}"
           author_type="${pr_fields[2]:-}"
@@ -104,7 +105,8 @@ runs:
               echo "::error::could not revalidate PR before posting an author-skip check" >&2
               exit 1
             fi
-            mapfile -t live_fields <<< "$live_pr"
+            live_fields=()
+            while IFS= read -r field; do live_fields+=("$field"); done <<< "$live_pr"
             if [ "${live_fields[0]:-}" != "open" ] || [ "${live_fields[1]:-}" != "$head" ]; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
               echo "skip_reason=closed_or_stale_head" >> "$GITHUB_OUTPUT"
