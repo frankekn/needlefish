@@ -105,8 +105,8 @@ pnpm review setup github --repo /path/to/repo
 提案會固定 action 與 Codex CLI 版本，並在 checkout 前拒絕 fork、bot 與
 非信任作者的 PR。不要搭配 `pull_request_target`。
 GitHub review 使用 `COMMENT`，不是正式 approval。權威的 `Needlefish`
-check 對 `pass` 顯示 success，對 `changes_requested` 或執行失敗顯示
-failure，對 `needs_human` 顯示 neutral。Neutral 不是通過。
+check 對 `pass` 顯示 success，對 `changes_requested`、`needs_human` 或執行
+失敗顯示 failure。
 
 Secret、hosted 支援的 runner、權限與操作者管理的 bundle 詳見
 [hosted 與 self-hosted 參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#github-action)。

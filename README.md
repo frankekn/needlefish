@@ -117,8 +117,8 @@ branch protection. After this version is published, the npm equivalent is
 The proposed workflow pins the action and Codex CLI. It rejects fork, bot, and
 untrusted-author PRs before checkout. Do not use `pull_request_target` with it.
 GitHub reviews use `COMMENT`, not formal approval. The authoritative
-`Needlefish` check is success for `pass`, failure for `changes_requested` or
-execution failure, and neutral for `needs_human`. Neutral is not a pass.
+`Needlefish` check is success for `pass` and failure for `changes_requested`,
+`needs_human`, or execution failure.
 
 Read the [hosted and self-hosted reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#github-action)
 for secrets, supported hosted runners, permissions, and operator-managed bundles.

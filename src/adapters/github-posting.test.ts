@@ -1774,7 +1774,7 @@ test("runGithub same-head skip ignores malformed connection configuration", asyn
 	writeFileSync(malformedConnections, "{");
 	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", malformedConnections);
 	const round2 = spawnGithubCli(fixture, 30, ["--connection", "selected"]);
-	assert.equal(round2.status, 0, round2.stderr);
+	assert.equal(round2.status, 1, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
 	assert.deepEqual(
@@ -4141,6 +4141,7 @@ test("a same-head marker with a completed blocking verdict check still skips", a
 		"a delivered blocking verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.equal(process.exitCode, 1);
 });
 
 test("an unreadable check list re-reviews instead of skipping", async (t) => {
@@ -4200,7 +4201,7 @@ test("a same-head marker whose only check is a superseded neutral check re-revie
 	);
 });
 
-test("a same-head marker with a completed needs_human check still skips", async (t) => {
+test("a same-head marker with a failed needs_human check skips and exits 1", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 105,
 		rawReview: defaultRawReview(),
@@ -4218,7 +4219,7 @@ test("a same-head marker with a completed needs_human check still skips", async 
 			{
 				id: 1,
 				status: "completed",
-				conclusion: "neutral",
+				conclusion: "failure",
 				output: { title: "Needlefish: needs_human — unverified migration" },
 			},
 		]),
@@ -4232,4 +4233,99 @@ test("a same-head marker with a completed needs_human check still skips", async 
 		"a delivered needs_human verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.equal(process.exitCode, 1);
+});
+
+test("needs_human fails the check and CLI without claiming a code defect", (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 106,
+    rawReview: JSON.stringify({
+      summary: "Partial review",
+      findings: [],
+      checked: ["public.ts inspected"],
+      residual_risks: [{ text: "auth.ts not reviewed", blocks: true }],
+    }),
+  });
+  const result = spawnGithubCli(fixture, 106);
+  assert.equal(result.status, 1, result.stdout);
+  const payload = lastCheckCompletion(readPosts(fixture.postLog));
+  assert.equal(payload.conclusion, "failure");
+  const output = payload.output;
+  assert.match(String(output?.title), /Review incomplete; human confirmation required/);
+  assert.match(String(output?.summary), /auth.ts not reviewed/);
+  assert.match(String(output?.summary), /Retry the review or ask a maintainer/);
+  assert.doesNotMatch(String(output?.title), /CHANGES REQUESTED/);
+  assert.match(result.stdout, /"outcome":"verdict","verdict":"needs_human"/);
+});
+
+test("a legacy neutral needs_human check is re-reviewed to fail closed", async (t) => {
+  const fixture = setupFixture(t, { prNumber: 107, rawReview: JSON.stringify({
+    summary: "Partial review", findings: [], checked: ["app inspected"],
+    residual_risks: [{ text: "auth not reviewed", blocks: true }],
+  }) });
+  seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+    user: { login: "github-actions[bot]", type: "Bot" } }]);
+  writeFileSync(fixture.checksState, JSON.stringify([{ id: 1, status: "completed",
+    conclusion: "neutral", output: { title: "Needlefish: needs_human" } }]));
+  await runGithub(fixture.repo, 107, { timeoutMs: 1000 });
+  assert.ok(runnerInvocationCount(fixture) > 0);
+  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
+  assert.equal(process.exitCode, 1);
+});
+
+for (const scenario of [
+  { label: "legacy neutral before current failure", previous: "neutral", latest: "needs_human", reverse: false },
+  { label: "current failure before legacy neutral", previous: "neutral", latest: "needs_human", reverse: true },
+  { label: "old pass before current blocker", previous: "pass", latest: "changes_requested", reverse: false },
+  { label: "current blocker before old pass", previous: "pass", latest: "changes_requested", reverse: true },
+  { label: "old blocker before current pass", previous: "changes_requested", latest: "pass", reverse: false },
+  { label: "current pass before old blocker", previous: "changes_requested", latest: "pass", reverse: true },
+] as const) {
+  test(`same-head exit uses the newest completed verdict: ${scenario.label}`, (t) => {
+    const fixture = setupFixture(t, { prNumber: 108, rawReview: defaultRawReview() });
+    seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+      user: { login: "github-actions[bot]", type: "Bot" } }]);
+    const check = (id: number, verdict: typeof scenario.previous | typeof scenario.latest) => ({
+      id, status: "completed", conclusion: verdict === "pass" ? "success" : verdict === "neutral" ? "neutral" : "failure",
+      output: { title: `Needlefish: ${verdict === "neutral" ? "needs_human" : verdict}` },
+    });
+    const checks = [check(1, scenario.previous), check(2, scenario.latest)];
+    writeFileSync(fixture.checksState, JSON.stringify(scenario.reverse ? checks.reverse() : checks));
+    const result = spawnGithubCli(fixture, 108);
+    assert.equal(result.status, scenario.latest === "pass" ? 0 : 1, result.stderr);
+    assert.match(result.stdout, /"reason":"same_head"/);
+    assert.equal(runnerInvocationCount(fixture), 0);
+    assert.deepEqual(readPosts(fixture.postLog), []);
+  });
+}
+
+for (const [conclusion, title] of [
+  ["failure", "Needlefish: review terminated"],
+  ["failure", "Needlefish: review failed"],
+  ["neutral", "Needlefish: superseded"],
+  ["neutral", "Needlefish: needs_human"],
+] as const) {
+  test(`a newer ${title} check is not covered by an older same-head pass`, async (t) => {
+    const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+    seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+      user: { login: "github-actions[bot]", type: "Bot" } }]);
+    writeFileSync(fixture.checksState, JSON.stringify([
+      { id: 1, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+      { id: 2, status: "completed", conclusion, output: { title } },
+    ]));
+    await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+    assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
+  });
+}
+
+test("a newer same-head pass still covers an older terminated check", async (t) => {
+  const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+  seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+    user: { login: "github-actions[bot]", type: "Bot" } }]);
+  writeFileSync(fixture.checksState, JSON.stringify([
+    { id: 1, status: "completed", conclusion: "failure", output: { title: "Needlefish: review terminated" } },
+    { id: 2, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+  ]));
+  await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+  assert.equal(runnerInvocationCount(fixture), 0, "a newer pass must still dedupe");
 });
