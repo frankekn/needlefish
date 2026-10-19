@@ -10,7 +10,7 @@ import {
 	type PriorFate,
 	type PriorFateCounts,
 } from "../shared/render.js";
-import { ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } from "../shared/repo.js";
+import { changedFiles, ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } from "../shared/repo.js";
 import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
@@ -157,6 +157,17 @@ function ghPost(args: readonly string[], rawInput?: string): unknown {
 function stringField(raw: JsonRecord, field: string): string {
 	const value = raw[field];
 	return typeof value === "string" ? value : "";
+}
+
+// Same merge-base and changed-file list the bundle uses. Any git failure
+// counts as not docs-only, so the caller keeps its credential error.
+function docsOnlyHead(repoPath: string, baseSha: string, headSha: string): boolean {
+	if (!baseSha) return false;
+	try {
+		return isDocsOnlyFastPath({ changedFiles: changedFiles(repoPath, git(["merge-base", baseSha, headSha], repoPath), headSha) });
+	} catch {
+		return false;
+	}
 }
 
 function nestedString(
@@ -1693,10 +1704,14 @@ export async function runGithub(
 		emitSkip("untrusted_author", prNumber, prHead);
 		return;
 	}
-	const headSha =
-		process.env.PR_HEAD_SHA ||
-		nestedString(pr, "head", "sha") ||
-		git(["rev-parse", "HEAD"], repoPath);
+	const currentHeadSha = nestedString(pr, "head", "sha");
+	if (!currentHeadSha) throw new Error("PR API returned no head.sha; cannot resolve or verify PR head");
+	const headSha = process.env.PR_HEAD_SHA || currentHeadSha;
+	const entrySkipReason = skipReasonForPr(pr, prNumber, headSha);
+	if (entrySkipReason) {
+		emitSkip(entrySkipReason, prNumber, headSha);
+		return;
+	}
 
 	let previous: ReturnType<typeof findPreviousReview> | undefined;
 	try { previous = findPreviousReview(repo, prNumber, expectedAppId); }
@@ -1723,46 +1738,15 @@ export async function runGithub(
 		return;
 	}
 
-	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
-	if (!baseSha || !headSha)
-		throw new Error("Could not resolve PR base/head SHA");
-	const {
-		baseSha: mergeBase,
-		patch,
-		patchStat,
-		changedFiles: changed,
-	} = prDiffFromShas(repoPath, baseSha, headSha);
-
-	const commentsUrl = stringField(pr, "comments_url");
-	const reviewsUrl = stringField(pr, "review_comments_url");
-	const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
-	const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
-	const selfLogin = authenticatedLogin();
-	const ownAuthor = (item: JsonRecord) => isTrustedStateAuthor(item, selfLogin);
-
-	const prMeta = {
-		number: prNumber,
-		title: stringField(pr, "title"),
-		body: typeof pr.body === "string" ? pr.body : null,
-		comments: normalizeBodyList(comments, ownAuthor),
-		reviews: normalizeBodyList(reviews, ownAuthor),
-		checks: [],
-	};
-
-	const bundle = makeBundle({
-		repoPath,
-		baseSha: mergeBase,
-		headSha,
-		patch,
-		patchStat,
-		changedFiles: changed,
-		prMeta,
-		deep: false,
-		focus: null,
-		agentsMd: readAgentsAt(repoPath, headSha),
-	});
-
-	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle));
+	// Connection parse, selection and credential errors fail here, before a
+	// check exists, so they do not spend a recovery round. A docs-only head
+	// never reaches a runner, so missing credentials do not stop it.
+	resolveConnectionOptions(opts, repoPath, process.env, false);
+	try {
+		resolveConnectionOptions(opts, repoPath, process.env, true);
+	} catch (error) {
+		if (!docsOnlyHead(repoPath, process.env.PR_BASE_SHA || nestedString(pr, "base", "sha"), headSha)) throw error;
+	}
 	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
@@ -1807,6 +1791,45 @@ export async function runGithub(
 		}
 		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, previous?.state.headSha === headSha ? 1 : 0);
 		if (recoveryAttempt > 1) throw new RecoveryLimitError();
+		const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
+		if (!baseSha) throw new Error("Could not resolve PR base SHA");
+		const {
+			baseSha: mergeBase,
+			patch,
+			patchStat,
+			changedFiles: changed,
+		} = prDiffFromShas(repoPath, baseSha, headSha);
+
+		const commentsUrl = stringField(pr, "comments_url");
+		const reviewsUrl = stringField(pr, "review_comments_url");
+		const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
+		const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
+		const selfLogin = authenticatedLogin();
+		const ownAuthor = (item: JsonRecord) => isTrustedStateAuthor(item, selfLogin);
+
+		const prMeta = {
+			number: prNumber,
+			title: stringField(pr, "title"),
+			body: typeof pr.body === "string" ? pr.body : null,
+			comments: normalizeBodyList(comments, ownAuthor),
+			reviews: normalizeBodyList(reviews, ownAuthor),
+			checks: [],
+		};
+
+		const bundle = makeBundle({
+			repoPath,
+			baseSha: mergeBase,
+			headSha,
+			patch,
+			patchStat,
+			changedFiles: changed,
+			prMeta,
+			deep: false,
+			focus: null,
+			agentsMd: readAgentsAt(repoPath, headSha),
+		});
+		const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle));
+
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.

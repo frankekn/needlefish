@@ -191,8 +191,7 @@ test("active GitHub review validates its connection with a single-line CLI error
   writeFileSync(f.file, "{");
   const result = f.run(["--github", "--pr", "7"]);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^needlefish: [^\n]+\n$/);
-  assert.match(result.stderr, /connections/i);
+  assert.equal(result.stderr, "needlefish: Connections file is not valid JSON. Check its syntax; do not store credentials in it.\n");
   assert.equal(f.launches().length, 0);
 });
 

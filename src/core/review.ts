@@ -1050,7 +1050,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 // Markdown). classify.ts rule order already routes workflow yml to
 // "workflow", so CI files can never ride this path. Executable files under
 // a docs/ directory are not classified "docs" (Markdown extension required).
-export function isDocsOnlyFastPath(bundle: Bundle): boolean {
+export function isDocsOnlyFastPath(bundle: Pick<Bundle, "changedFiles">): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
