@@ -210,6 +210,7 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      recheck: ${{ inputs.recheck || false }}
       runner: codex
       model: gpt-5.6-terra
       codex_reasoning_effort: xhigh
@@ -219,6 +220,19 @@ jobs:
 Caller 保留 `workflow_dispatch.inputs.pr_number`、`actions: write`，以及以
 ` PR #<編號>` 結尾的 run-name，供有次數上限的 reconciliation 使用。Reconcile
 維持在 GitHub-hosted Ubuntu 執行，不依賴 review runner 是否正常。
+自動 dispatch 只做有次數上限的 recovery。若要手動強制完整 review，在 caller
+宣告選填的 boolean `workflow_dispatch.inputs.recheck`（預設 `false`），並如上例
+經由 `with.recheck` 傳入。
+
+直接以 CLI 搭配自訂 GitHub App 時，以該 App 的 installation token 作為
+`GH_TOKEN`，並把 `NEEDLEFISH_CHECK_APP_ID` 設為該 App 的數字 ID。ID 可從
+GitHub App 設定頁，或該 App 建立之 check 的 `app.id` 欄位取得。此 pin 只驗證
+check 的擁有者，不會選擇或產生 token。內建 reusable workflow 使用
+`secrets.GITHUB_TOKEN`，不接受自訂 App token；它在 review 與 reconciliation
+時清除 `NEEDLEFISH_CHECK_APP_ID`，因此 repository variable 與 runner 環境的
+pin 都無法覆蓋其 GitHub Actions 身分。自訂 App pin 只適用於直接 CLI 使用；
+token 與 App pin 不符時 fail closed。
+未設定 pin 時，新 check 與 recovery 只接受 GitHub Actions 建立的 check。
 若 direct PR trigger 要使用專用 fleet，設定 repository variable
 `NEEDLEFISH_RUNS_ON` 為操作者持有的 runner label；未設定時維持 `self-hosted`。
 明確傳入的 `runs_on` 仍優先。
