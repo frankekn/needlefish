@@ -755,6 +755,7 @@ async function runCodexOnce(
 					repoPath: opts.repoPath,
 					prompt,
 					targetHeadSha: opts.targetHeadSha,
+					remainingReviewMs: () => remainingReviewMs(opts.reviewDeadlineMs),
 					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
 					tmp,
