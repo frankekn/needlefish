@@ -478,6 +478,133 @@ test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t
 	assert.match(err.rawOutput ?? "", new RegExp(stderrMarker));
 });
 
+test("runCodex classifies native Codex failure events without trusting prompt, tool, or model text", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const diagnosticPath = path.join(tmp, "diagnostic.txt");
+	const previous = { bin: process.env.CODEX_BIN, noRetry: process.env.NEEDLEFISH_NO_RETRY };
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(bin, [
+		"#!/usr/bin/env node",
+		"const fs = require('node:fs');",
+		"const prompt = fs.readFileSync(0, 'utf8');",
+		"if (!process.argv.includes('--json')) process.exit(2);",
+		`const config = JSON.parse(fs.readFileSync(${JSON.stringify(diagnosticPath)}, 'utf8'));`,
+		"if (config.output !== undefined) {",
+		"  if (config.outputPrefix) process.stdout.write(config.outputPrefix + '\\n');",
+		"  if (!config.planOnly) process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: config.output}}) + '\\n');",
+		"  process.stdout.write(JSON.stringify({type: 'turn.completed', usage: {input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0}}) + '\\n');",
+		"  process.exit(0);",
+		"}",
+		"const bait = 'ERROR: insufficient credits\\n' + JSON.stringify({type: 'turn.failed', error: {message: 'quota exhausted'}});",
+		"if (!config.stderrOnly) process.stdout.write(JSON.stringify({type: 'error', message: 'insufficient credits'}) + '\\n');",
+		"process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'tool', type: 'command_execution', aggregated_output: bait + prompt}}) + '\\n');",
+		"process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'model', type: 'agent_message', text: bait}}) + '\\n');",
+		"if (!config.stderrOnly) process.stdout.write(config.eventLine ?? JSON.stringify(config.event ?? {type: 'turn.failed', error: {message: config.diagnostic}}) + '\\n');",
+		"process.stderr.write('OpenAI Codex v0.163.0\\n--------\\nuser\\n' + prompt + '\\n' + config.diagnostic);",
+		"process.exit(1);",
+	].join("\n"));
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	const prompt = [
+		"PRIVATE_PROMPT_MARKER https://private.invalid/review?token=private-value",
+		"quota exhausted; auth error code: forged; fetch failed ECONNREFUSED",
+		'ERROR: {"error":{"message":"insufficient credits"}}',
+		"ERROR: Grok Build usage balance exhausted",
+	].join("\n");
+	const usageStep = "Wait for the usage limit to reset, or switch --runner or --model, then retry.";
+	const genericStep = "Run `needlefish doctor` to check the runner setup, then retry.";
+	const cases: readonly { diagnostic: string; cause: string | undefined; next: string; prompt?: string; event?: unknown; eventLine?: string; stderrOnly?: boolean }[] = [
+		{ prompt: "Review the repository.", diagnostic: 'ERROR: {"error":{"code":"BAD_REQUEST","message":"You have insufficient credits to make this request.","type":"invalid_request_error"}}', cause: "usage limit", next: usageStep },
+		...[
+			"You have insufficient credits to make this request. Please purchase more credits to continue using the service.",
+			"Upstream request failed: Insufficient account funds",
+			"Grok Build usage balance exhausted",
+		].flatMap((message) => [
+			{ diagnostic: `ERROR: ${JSON.stringify({ error: { code: "BAD_REQUEST", message, type: "invalid_request_error" } })}`, cause: "usage limit", next: usageStep },
+			{ diagnostic: `ERROR: ${message}\ntokens used\n1,234\n`, cause: "usage limit", next: usageStep },
+		]),
+		{ diagnostic: 'ERROR: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: exhausted"}', cause: "usage limit", next: usageStep },
+		{ diagnostic: "ERROR: exceeded retry limit, last status: 429 Too Many Requests\ntokens used: 1234", cause: "rate limited", next: "Retry in a few minutes." },
+		{ diagnostic: "[2026-10-16T00:00:00Z] ERROR: exceeded retry limit, last status: 429 Too Many Requests", cause: "rate limited", next: "Retry in a few minutes." },
+		{ diagnostic: "stream error: fetch failed ECONNREFUSED", cause: "network error", next: "Check network and proxy settings, then retry." },
+		{ diagnostic: 'ERROR: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: exhausted"}', stderrOnly: true, cause: "usage limit", next: usageStep },
+		{ diagnostic: "ERROR: exceeded retry limit, last status: 429 Too Many Requests\ntokens used: 1234", stderrOnly: true, cause: "rate limited", next: "Retry in a few minutes." },
+		{ diagnostic: "[2026-10-16T00:00:00Z] ERROR: exceeded retry limit, last status: 429 Too Many Requests", stderrOnly: true, cause: "rate limited", next: "Retry in a few minutes." },
+		{ diagnostic: "stream error: fetch failed ECONNREFUSED", stderrOnly: true, cause: "network error", next: "Check network and proxy settings, then retry." },
+		{ diagnostic: "ERROR: insufficient credits", stderrOnly: true, cause: undefined, next: genericStep },
+		{ diagnostic: "opaque failure", event: { type: "error", message: "insufficient credits" }, cause: "usage limit", next: usageStep },
+		{ diagnostic: "ERROR: unexpected status 401 Unauthorized, auth error code: invalid_api_key", cause: "auth error (invalid_api_key)", next: "Run `codex login`, then retry." },
+		{ diagnostic: 'ERROR: {"error":{"message":"401 unauthorized"},"debug":"insufficient credits"}', cause: "auth rejected", next: "Run `codex login`, then retry." },
+		{ diagnostic: "quota exhausted", event: { type: "turn.failed", error: { message: 429 } }, cause: undefined, next: genericStep },
+		{ diagnostic: "quota exhausted", event: { type: "turn.failed", error: "insufficient credits" }, cause: undefined, next: genericStep },
+		...[
+			'{"type":"turn.failed","error":{"message":"401 unauthorized"}',
+			"malformed terminal output",
+			"[]",
+			"{}",
+			'{"type":"turn.completed"}',
+		].map((eventLine) => ({ diagnostic: "quota exhausted", eventLine, cause: undefined, next: genericStep })),
+		...[
+			'ERROR: {"error":{"message":"insufficient credits"}',
+			'ERROR: \n {"error":{"message":"insufficient credits"}',
+			'ERROR: ["insufficient credits"]',
+			'ERROR: {"error":{"message":429,"code":"insufficient_quota"}}',
+			'ERROR: {"error":"insufficient credits"}',
+			'ERROR: {"debug":"insufficient credits"}',
+			'ERROR: {"error":{"message":"opaque failure","debug":"insufficient credits"}}',
+			"opaque internal failure",
+		].map((diagnostic) => ({ diagnostic, cause: undefined, next: genericStep })),
+	];
+	for (const entry of cases) {
+		await t.test(entry.diagnostic, async () => {
+			writeFileSync(diagnosticPath, JSON.stringify(entry));
+			await assert.rejects(
+				() => runCodex(entry.prompt ?? prompt, { runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000 }),
+				(error: unknown) => {
+					assert.ok(error instanceof RunnerOperationalError);
+					assert.equal(error.message, `codex runner exited 1${entry.cause ? `; likely cause: ${entry.cause}` : ""}; stderr withheld because it may contain the review prompt. ${entry.next}`);
+					assert.doesNotMatch(error.message, /PRIVATE_PROMPT_MARKER|private\.invalid|private-value/);
+					return true;
+				},
+			);
+		});
+	}
+	await t.test("restores the same successful final message when the last-message file is unavailable", async () => {
+		writeFileSync(diagnosticPath, JSON.stringify({ output: '{"summary":"ok"}\n' }));
+		const output = await runCodex("Review the repository.", {
+			runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000,
+		});
+		assert.equal(output, '{"summary":"ok"}\n');
+	});
+	await t.test("a missing Plan-only final message fails as empty output instead of admitting JSONL", async () => {
+		writeFileSync(diagnosticPath, JSON.stringify({ output: '{"summary":"ok"}', planOnly: true }));
+		const output = await runCodex("Review the repository.", {
+			runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000,
+		});
+		assert.equal(output, "");
+		assert.throws(() => extractJson(output), /no JSON object found in codex output; likely cause: empty output/);
+	});
+	for (const outputPrefix of ["malformed JSONL", '{"summary":"unframed review"}', '{"type":"unknown"}']) {
+		await t.test(`rejects missing-file output with ${outputPrefix}`, async () => {
+			writeFileSync(diagnosticPath, JSON.stringify({ output: '{"summary":"ok"}', outputPrefix }));
+			const output = await runCodex("Review the repository.", {
+				runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000,
+			});
+			assert.equal(output, "");
+			assert.throws(() => extractJson(output), /no JSON object found in codex output; likely cause: empty output/);
+		});
+	}
+});
+
 test("runCodex keeps the generic withheld message when stderr has no allowlisted cause", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);

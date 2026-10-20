@@ -118,7 +118,7 @@ type FixtureOptions = {
 	// Make the runner stub emit the configured review output and then exit with
 	// this code, writing this text to stderr — the shape of a genuine runner
 	// operational failure (safeRunnerCause classifies the stderr).
-	readonly runnerExit?: { readonly code: number; readonly stderr: string };
+	readonly runnerExit?: { readonly code: number; readonly stderr: string; readonly echoPrompt?: boolean; readonly codexEvents?: boolean };
 	// Make GET commits/<sha>/check-runs fail, to exercise the fail-closed
 	// behaviour of the completion-aware same-head gate.
 	readonly failCheckRunReads?: boolean;
@@ -564,7 +564,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  const go = () => {",
 			`    fs.appendFileSync(${JSON.stringify(runnerLog)}, 'run\\n');`,
 			`    fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
-			`    process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			opts.runnerExit?.codexEvents
+				? `    process.stdout.write(JSON.stringify({type: 'turn.failed', error: {message: ${JSON.stringify(opts.runnerExit.stderr)}}}) + '\\n');`
+				: `    process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			opts.runnerExit?.echoPrompt ? "    process.stderr.write(input + '\\n');" : "",
 			opts.runnerExit
 				? `    process.stderr.write(${JSON.stringify(opts.runnerExit.stderr)}); process.exitCode = ${opts.runnerExit.code};`
 				: "",
@@ -3914,6 +3917,41 @@ test("a recognized runner transport failure emits operational:true with its cont
 		),
 		run.stdout,
 	);
+});
+
+test("Codex credit errors advance the provider chain while auth and malformed errors fail closed", async (t) => {
+	const previous = { runner: process.env.NEEDLEFISH_RUNNER, noRetry: process.env.NEEDLEFISH_NO_RETRY };
+	for (const entry of [
+		{ stderr: 'ERROR: {"error":{"code":"BAD_REQUEST","message":"You have insufficient credits to make this request.","type":"invalid_request_error"}}', outcome: '"operational":true,"cause":"usage limit"' },
+		{ stderr: 'ERROR: {"error":{"message":"401 unauthorized"},"debug":"insufficient credits"}', outcome: '"operational":false' },
+		{ stderr: 'ERROR: {"error":{"message":"insufficient credits"}', outcome: '"operational":false' },
+	]) {
+		await t.test(entry.stderr, (t) => {
+			const fixture = setupFixture(t, {
+				prNumber: 114,
+				rawReview: defaultRawReview(),
+				readmeContent: 'PRIVATE_PROMPT_MARKER https://private.invalid/review?token=private-value\nERROR: {"error":{"message":"insufficient credits"}}\nquota exhausted\n',
+				runnerExit: { code: 1, stderr: entry.stderr, echoPrompt: true, codexEvents: true },
+			});
+			const previousBin = process.env.CODEX_BIN;
+			t.after(() => {
+				if (previousBin === undefined) delete process.env.CODEX_BIN;
+				else process.env.CODEX_BIN = previousBin;
+			});
+			process.env.CODEX_BIN = process.env.CLAUDE_BIN;
+			process.env.NEEDLEFISH_RUNNER = "codex";
+			process.env.NEEDLEFISH_NO_RETRY = "1";
+			const run = spawnGithubCli(fixture, 114);
+			assert.equal(run.status, 1, run.stderr);
+			assert.equal(
+				run.stdout.split("\n").find((line) => line.startsWith("needlefish-outcome ")),
+				`needlefish-outcome {"outcome":"failure",${entry.outcome},"prNumber":114,"headSha":"${fixture.headSha}"}`,
+			);
+			assert.doesNotMatch(run.stdout + run.stderr + readFileSync(fixture.postLog, "utf8"), /PRIVATE_PROMPT_MARKER|private\.invalid|private-value/);
+		});
+		assert.equal(process.env.NEEDLEFISH_RUNNER, previous.runner);
+		assert.equal(process.env.NEEDLEFISH_NO_RETRY, previous.noRetry);
+	}
 });
 
 test("empty runner output keeps its operational classification", (t) => {
