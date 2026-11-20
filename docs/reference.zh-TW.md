@@ -52,6 +52,38 @@ NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --run
 needlefish --repo . --json | jq .verdict
 ```
 
+**Dry run**——收集審查 bundle，並輸出將送給模型內容的遮蔽摘要（模式、
+SHA、含 surface 的變更檔案、patch 大小、fast-path 與 large-path 判斷）。
+不會呼叫任何 runner，也不寫入快取：
+
+```bash
+needlefish --repo /path/to/some-repo --dry-run
+needlefish --repo /path/to/some-repo --dry-run --json   # machine-readable summary
+needlefish pr 123 --repo /path/to/some-repo --dry-run
+```
+
+`needlefish pr <n> --dry-run` 仍可能將 PR refs `git fetch` 到 repo——
+與真正的 `pr` 審查相同的 fetch；保證的是不呼叫模型、不寫入快取。
+
+`--print-bundle`（只能搭配 `--dry-run`）輸出完整的 bundle JSON——其中
+原樣包含整份 diff 與 repo 的 `AGENTS.md` 政策文字：
+
+```bash
+needlefish --repo /path/to/some-repo --dry-run --print-bundle
+```
+
+快取的結果可以重新渲染或重新檢查，不必重跑審查——兩個指令都是唯讀的：
+
+```bash
+needlefish render ~/.cache/needlefish/<repo>/last-review.json
+needlefish verdict ~/.cache/needlefish/<repo>/last-review.json
+```
+
+`render` 讓檔案經過與 stdout、PR review 內文、check 摘要相同的
+`renderMarkdown`。`verdict` 透過 `deriveVerdict` 從快取的 findings 重新
+計算 verdict，輸出儲存與推導的 verdict，兩者不同時（例如快取被修改）
+exit 1。兩個快取指令遇到 `changes_requested` 或 `needs_human` 時也 exit 1。
+
 ### 機器介面
 
 `needlefish --repo <path> --json` 與 `needlefish pr <number> --json` 會將
@@ -64,7 +96,11 @@ needlefish --repo . --json | jq .verdict
 | `schemaVersion` | 固定為 `1`。 |
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
+| `prNumber` | 選用的 PR 編號，GitHub 模式與 `needlefish pr` 時存在。 |
+| `prBaseSha` | 選用的 PR base 分支頂端；`baseSha` 一律是 merge base。 |
+| `scopeCallouts` | 選用的非阻擋提示，列出 diff 中的 dependency/schema/workflow/config/public-api 檔案，由變更檔案清單推導。 |
 | `docsOnlyFastPath` | 選用的 pipeline 產生旗標，表示 docs-only 政策跳過了所有模型呼叫。 |
+| `coverageGaps` | 選用的 `{ kind: "lfs_pointer_only", file }` 清單（審查 sandbox 只能以 Git LFS pointer stub 簽出的變更檔案，其內容未被審查），其後最多一筆 `{ kind: "lfs_scan_incomplete" }`，表示 sandbox 無法判斷變更檔案是否為 pointer stub（無法確定是否使用 Git LFS 或取得 pointer 清單）。由 sandbox 回報，從不由模型產生；不影響 verdict。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |
 | `findings[].consumerLine` | 選用的下游受影響行號。 |
@@ -73,8 +109,18 @@ needlefish --repo . --json | jq .verdict
 | `stats` | 選用的逐 runner 呼叫時間與嘗試次數統計。 |
 | `totalDurationMs` | 選用的總審查時間（毫秒）。 |
 
+完整 shape 以 JSON Schema（draft 2020-12）發布於
+[`schemas/review-result.v1.schema.json`](../schemas/review-result.v1.schema.json)，
+npm 套件也附帶於
+`node_modules/needlefish/schemas/review-result.v1.schema.json`。`v1` 對應
+`schemaVersion`。Schema 允許未知屬性，因此新版本新增欄位時 validator 仍可
+運作。有兩條規則無法以 schema 表達：finding 的 `lineEnd` 絕不小於
+`lineStart`，且 `stats[].usage.totalTokens` 至少為
+`inputTokens + outputTokens`。`--dry-run --json` 輸出的是另一種摘要物件，
+不在此 schema 描述範圍內。
+
 GitHub 模式在診斷輸出後附上最終 `needlefish-outcome {json}`。
-備援流程只讀取此結果，不搜尋審查正文；只有辨識到 runner transport
+`outcome:"verdict"` 帶有計算出的 verdict。備援流程只讀取此結果，不搜尋審查正文；只有辨識到 runner transport
 故障的 `outcome:"failure"` 才帶 `operational:true`。阻擋 verdict 維持
 exit 1，跳過仍使用 `needlefish-skip`。
 
@@ -138,6 +184,11 @@ review 可能比已修復的 head 活得更久。check-run 才是 merge gate—�
 review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶有驗證
 過的精確 replacement 時，其 inline comment 會附上原生 GitHub suggestion
 區塊；驗證失敗時退回一般 comment。
+
+被跳過的審查——PR 已關閉、作者不受信任、head 在審查中途移動，或該 head
+已審查過——仍會在 stdout 輸出機器可讀的
+`needlefish-skip {"reason":"closed_pr"|"untrusted_author"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
+行供自動化使用，並保留原本的文字通知。
 
 ### Hosted（任何 repo）
 
@@ -279,8 +330,32 @@ runner。共通選項：
 | runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude`、`opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `high`） |
-| timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000`（20 分鐘） |
+| 單次 attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000`（20 分鐘） |
+| 共用審查 deadline | `NEEDLEFISH_REVIEW_TIMEOUT_MS` | 未設定 |
+| 每次呼叫只嘗試一次 | `NEEDLEFISH_NO_RETRY` | 未設定（`1` = 開啟） |
+| 終止寬限 | `NEEDLEFISH_TERMINATION_GRACE_MS` | `5000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
+
+`NEEDLEFISH_REVIEW_TIMEOUT_MS` 為模型 pipeline 設定單一 monotonic deadline。
+所有 map/review、deep、critic、JSON 修復與 process 重試共用它；每次 runner
+attempt 以其單次 timeout 與剩餘時間中較小者為上限。重試 backoff 必須在下一次
+attempt 能開始前結束。逾時一律 fail closed，絕不把不完整的覆蓋轉成 pass。請將
+它設得低於外層 job/shell timeout，留時間給 process 收尾與報告交付；這個模型
+執行 deadline 不涵蓋那些操作。未設定時維持既有的單次 attempt 行為。
+
+`NEEDLEFISH_NO_RETRY=1` 讓每次 runner 呼叫只嘗試一次：crash、非零 exit 或
+idle 停滯會直接讓該 pass 失敗，不會在 retry backoff 後再跑一次。適合偏好可預期
+完成時間、勝過重試恢復的高流量 lane；無論如何，審查 deadline 仍會限制整次執行。
+
+收到 SIGINT 或 SIGTERM（job timeout、取消或 watchdog）時，Needlefish 會把收到
+的訊號轉送給 runner process group，經過 `NEEDLEFISH_TERMINATION_GRACE_MS` 後
+SIGKILL 它，並 exit 130 或 143；第二個訊號會立即結束。GitHub 模式下，它會先在
+同一段寬限內完成自己 in_progress 的 `Needlefish` check：目前 head 上標為
+`failure`、標題 `Needlefish: review terminated`，或在 head 已移動或 PR 已關閉
+時標為 neutral 的 `Needlefish: superseded`。不會發布任何 review 或留言，且收尾的
+GitHub 呼叫會在寬限到期時被切斷，避免卡住的 `gh` 拖住 process。請讓寬限低於
+呼叫端的強制 kill：GitHub Actions 會送出 SIGINT，7.5 秒後送 SIGTERM，再過
+2.5 秒後 kill。
 
 opencode 的 idle deadline 在 CLI 每次產生 stdout 或 stderr 時重設。若
 provider stream 停止產生輸出，Needlefish 會終止該 attempt 並使用既有的
