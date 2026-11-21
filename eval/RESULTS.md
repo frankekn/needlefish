@@ -5,6 +5,46 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-11-21 — Magpie GPT and Claude on the 84-fixture benchmark
+
+每組 x1 跑完整 84 項。Opus、Sonnet 與 GPT-5.6 Terra 在同一時段各自重跑
+全部 252 次。所有輪次含保留測例，每組 concurrency 2。GPT-6.2 Sol 與
+GPT-6.1 Terra 經 Pi / Magpie，Claude 經 Pi / CLIProxyAPI，Pi 版本 1.6.0。
+同期 GPT-5.6 Terra high 基準使用 Codex CLI 與本機登入。
+
+### 第一輪 x1
+
+| 模型 | Runner / 路由 | 召回率 | Tier 1 | Tier 2 | Tier 3 | 誤報 | 無效 | 判定正確率 | Positive noise | 秒／案 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [GPT-6.2 Sol medium](results/2026-11-21-gpt-6.2-sol-medium-x1.json) | Pi / Magpie | 89.7% | 7/7 | 94.1% | 76.5% | 4/24 | 0/84 | 92.9% | 0.190 | 40.5 |
+| [GPT-6.1 Terra high](results/2026-11-21-gpt-6.1-terra-high-x1.json) | Pi / Magpie | 89.7% | 7/7 | 97.1% | 70.6% | 4/24 | 0/84 | 91.7% | 0.224 | 30.6 |
+| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x1.json) | Pi / CLIProxyAPI | 93.1% | 7/7 | 97.1% | 82.4% | 0/24 | 1/84 | 95.2% | 0.069 | 28.3 |
+| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x1.json) | Pi / CLIProxyAPI | 91.4% | 7/7 | 97.1% | 76.5% | 1/24 | 2/84 | 91.7% | 0.017 | 20.6 |
+
+兩組 Magpie GPT 各有四個乾淨案例誤報，因此本輪停在 x1。Claude 的 x1
+無效輸出均由驗證器拒絕低信心的阻擋級 finding。
+
+### 同期 x3
+
+| 模型 | Runner / 路由 | 召回率 | Tier 1 | Tier 2 | Tier 3 | 誤報 | 無效 | 判定正確率 | Positive noise | 秒／案 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [GPT-5.6 Terra high](results/2026-11-21-gpt-5.6-terra-high-x3.json) | Codex CLI | 92.5% | 21/21 | 98.0% | 78.4% | 6/72 | 1/252 | 96.0% | 0.069 | 105.1 |
+| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x3.json) | Pi / CLIProxyAPI | 94.8% | 21/21 | 99.0% | 84.3% | 0/72 | 0/252 | 96.8% | 0.057 | 28.1 |
+| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x3.json) | Pi / CLIProxyAPI | 92.5% | 20/21 | 99.0% | 78.4% | 0/72 | 0/252 | 95.2% | 0.017 | 20.6 |
+
+Opus 命中全部 21 個 Tier 1 draws，誤報與無效輸出均為零。其召回率與同期
+Terra 相差 2.3 個百分點。Sonnet 最快，但在 `real-pr1-self-review-tool-checkout`
+第 2 次漏抓 Tier 1，未達門檻。兩個 Claude x3 都重新執行
+全套，未沿用 x1。各組 structured cheat detection 均為零；同期 Terra 有
+57 次 raw bait exposure。
+
+執行 checkout 為 `aaf48b11c01f62d4a23c01a550f5c68c0aba9f87`，
+沿用已封存的 [0.4.1 原始碼快照](results/2026-10-13-muse-code-source-aaf48b1.tar.gz)。七份報告的 prompt
+`e62d0889fc704541`、fixture set `1968a9d2fabe2a56`、scorer
+`a424d3bb59a40443` 與 anti-cheat v2 一致。報告連結保留原始 JSON。
+這是歷史 84 項評測的同期模型比較。公開榜使用 87 項案例與另一版 scorer，
+需在該版本重測才能更新排名。
+
 ## 2026-10-16 PR255 runner cleanup 離線 D gate
 
 `OFFLINE_D_GATE_PASS`。實際 source head 為
