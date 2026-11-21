@@ -169,6 +169,14 @@
       "model": "codex/gpt-6.1-terra",
       "effort": "high",
       "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json",
+      "name": "DeepSeek V4.1 Flash",
+      "runner": "pi",
+      "model": "deepseek-v4.1-flash",
+      "effort": "high",
+      "status": "Candidate"
     }
   ],
   "blocked": [

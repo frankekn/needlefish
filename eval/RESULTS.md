@@ -29,6 +29,23 @@ All 87 fixtures ran three times, including sealed holdouts. Prompt
 `8bbc6152d8b45a43`, anti-cheat v2. Each report
 has trace diagnostics for all 255 model-reviewed draws and six docs fast paths.
 
+## 2026-11-21 — DeepSeek V4.1 Flash high rerun
+
+Pi 1.6.0 via CLIProxyAPI used the current `deepseek-v4.1-flash` model ID at
+`high` effort. The prior public result used the dated model alias and Pi 0.85.1.
+This is a separate candidate lane. The run recorded 0
+raw bait exposures and zero structured detections across all 261 draws.
+
+| Model | Balanced | Anchored recall | Tier 1 | False positives | Invalid | Noise | Mean | Public status |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| [DeepSeek V4.1 Flash high](results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | 95.75% | 92.90% | 21/21 | 1/72 | 0/261 | 0.044 | 30.4 s | Rank 1 at publication |
+
+The archived execution commit is `a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92`.
+All 87 fixtures ran three times, including sealed holdouts. Prompt
+`e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2. Each report
+has trace diagnostics for all 255 model-reviewed draws and six docs fast paths.
+
 ## 2026-11-21 — Magpie GPT and Claude on the 84-fixture benchmark
 
 **退役版本。** 此輪使用 Needlefish 0.4.1 的 84 案例套件。新模型的公開榜
