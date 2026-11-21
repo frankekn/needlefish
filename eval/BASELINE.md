@@ -1,6 +1,9 @@
 # Codex Baseline — e62d0889fc704541
 
-The reference numbers for the needlefish eval. All other runners/models report **delta vs this baseline** and must match the prompt-hash.
+This baseline is retired and retained for historical replay. New public model
+evaluations use the baseline selected by `eval/leaderboard.json`. Follow the
+[public benchmark preflight](../docs/reference.md#public-benchmark-preflight)
+before making model calls.
 
 - **promptHash:** `e62d0889fc704541`
 - **runner:** codex | **model:** (default)

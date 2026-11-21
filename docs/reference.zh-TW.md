@@ -448,6 +448,9 @@ workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
 
 ## 歷史 benchmark 記錄
 
+84 案例套件已退役。新模型的公開分數以 `eval/leaderboard.json` 指定的
+基準及其凍結版本為準。呼叫模型前先完成 [公開評測預檢](reference.md#public-benchmark-preflight)。
+
 以下解讀保留歷史實驗記錄，不代表目前 production lane 的選擇。來源與日期以各連結報告為準。
 
 哪一組 model、agent harness、provider route 與 effort，能抓到真正的 PR

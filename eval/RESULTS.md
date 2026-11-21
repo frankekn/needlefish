@@ -5,7 +5,13 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+The 84-fixture suite is retired. Use the [public benchmark preflight](../docs/reference.md#public-benchmark-preflight)
+for new public scores. The results below preserve the original measurements.
+
 ## 2026-11-21 — Magpie GPT and Claude on the 84-fixture benchmark
+
+**退役版本。** 此輪使用 Needlefish 0.4.1 的 84 案例套件。新模型的公開榜
+評測依 [公開評測預檢](../docs/reference.md#public-benchmark-preflight) 選擇套件。
 
 每組 x1 跑完整 84 項。Opus、Sonnet 與 GPT-5.6 Terra 在同一時段各自重跑
 全部 252 次。所有輪次含保留測例，每組 concurrency 2。GPT-6.2 Sol 與

@@ -563,6 +563,29 @@ protection. Once enabled, findings arrive as
 inline review comments anchored to the diff; pushes update the same review in
 place (fresh / still-open / no longer reported) instead of stacking new ones.
 
+## Public benchmark preflight
+
+The 84-fixture suite is retired. For a new public score, use the frozen suite
+selected by the `baseline` field in [`eval/leaderboard.json`](../eval/leaderboard.json).
+Read the baseline report from the current default branch. Its `gitSha` identifies
+the execution checkout. Resolve that commit before running any models.
+
+1. From the frozen checkout, run `eval/run.ts --dry-run` through `node --import tsx`
+   with the intended runner, model, effort, provider, route, and runner version.
+   Include all holdouts and save the report separately from live results.
+2. Confirm zero model calls and match the baseline's fixture count, `promptHash`,
+   `fixtureSetHash`, and `scorerHash`. Verify that the checkout uses the baseline's
+   `anticheatVersion` and that the dry-run report has `privateEnvironment: false`.
+   Proxy environment variables can mark reports private. Verify this with the
+   same environment intended for the live run. Resolve mismatches before sampling.
+3. For a ranked submission, run three draws over the complete suite. Validate
+   the live report against the same baseline identities and verify the published
+   runner metadata, completeness, and anti-cheat results before adding the lane.
+
+The current frozen baseline uses 87 fixtures, fixture set `e9923bbc7753a04a`,
+scorer `8bbc6152d8b45a43`, prompt `e62d0889fc704541`, and anti-cheat v2.
+Resolve those values from the manifest whenever the benchmark advances.
+
 ## Historical benchmark notes
 
 The commentary below records historical experiments. It does not select the current production lane. Read each linked report for its source and date.
