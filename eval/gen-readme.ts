@@ -16,6 +16,8 @@ import {
   balancedReviewAccuracy,
   compareLanes,
   displayedMetrics,
+  harnessLabel,
+  latestModelLanes,
   operationalFailures,
   scoreConfidenceInterval,
   statisticalRanks,
@@ -115,10 +117,11 @@ export function renderBenchmarkBlock(
   const scored = configured.filter(
     ({ report }) => operationalFailures(report).length === 0,
   );
-  const qualified = scored
+  const latest = latestModelLanes(scored);
+  const qualified = latest
     .filter(({ report }) => qualifies(report))
     .sort(compareLanes);
-  const disqualified = scored
+  const disqualified = latest
     .filter(({ report }) => !qualifies(report))
     .sort(compareLanes);
   if (qualified.length === 0) {
@@ -192,11 +195,11 @@ export function renderBenchmarkBlock(
   const meanValues = rows.map((row) => row.meanDurationMs);
   const ranks = statisticalRanks(qualified);
   const rankedHeader = zh
-    ? "| 名次 | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | 平均 |"
-    : "| Rank | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |";
+    ? "| 名次 | 模型 | 模型 ID | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | 平均 |"
+    : "| Rank | Model | Model ID | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |";
   const rankedTable = [
     rankedHeader,
-    "| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...rows.map((row, index) => {
       const { config, report } = row.lane;
       const url = reportUrl(config.report);
@@ -210,7 +213,8 @@ export function renderBenchmarkBlock(
       const cells = [
         String(ranks[index]),
         laneCell,
-        report.runnerVersion ?? "",
+        `\`${report.model}\``,
+        harnessLabel(report),
         report.effort,
         bold(`${(row.balanced * 100).toFixed(2)}%`, balancedValues, row.balanced, "max"),
         `${(lower * 100).toFixed(1)}%–${(upper * 100).toFixed(1)}%`,
@@ -227,18 +231,21 @@ export function renderBenchmarkBlock(
     ? `**未排名 lane**，同批量測——目前 interim gate 要求 Tier-1 共 21 draws 至少成功 20 次、每個 fixture 至少 2/3，且 positive noise 不超過 ${MAX_MEAN_NOISE_PER_POSITIVE}；事後 x3 確認僅作記錄，不恢復名次。`
     : `**Unranked lanes**, same run — the interim gate requires at least 20/21 Tier-1 successes, at least 2/3 on every fixture, and positive noise no higher than ${MAX_MEAN_NOISE_PER_POSITIVE}; a later x3 confirmation is recorded but does not restore the rank.`;
 
-  const sections = [GENERATED_NOTE, provenance, rankedIntro, rankedTable, unrankedIntro];
+  const selection = zh
+    ? "每個模型顯示最近一次可計分的測量。模型 ID 為實測時傳給 Harness 的值。展開公開榜的模型列可查閱先前測量。"
+    : "Each model shows its latest scored run. The model ID is the value passed to the harness. Expand a model on the benchmark page to find earlier runs.";
+  const sections = [GENERATED_NOTE, provenance, selection, rankedIntro, rankedTable, unrankedIntro];
   if (disqualified.length > 0) {
     const unrankedHeader = zh
-      ? "| Lane | Balanced | 完整報告未過的門檻 |"
-      : "| Lane | Balanced | Gate missed in the full report |";
+      ? "| 模型 | 模型 ID | Harness | Effort | Balanced | 完整報告未過的門檻 |"
+      : "| Model | Model ID | Harness | Effort | Balanced | Gate missed in the full report |";
     sections.push(
       [
         unrankedHeader,
-        "| --- | ---: | --- |",
+        "| --- | --- | --- | --- | ---: | --- |",
         ...disqualified.map(
           ({ config, report }) =>
-            `| [${config.name}](${reportUrl(config.report)}) ${report.effort} | ${(balancedReviewAccuracy(report) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
+            `| [${config.name}](${reportUrl(config.report)}) | \`${report.model}\` | ${harnessLabel(report)} | ${report.effort} | ${(balancedReviewAccuracy(report) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
         ),
       ].join("\n"),
     );

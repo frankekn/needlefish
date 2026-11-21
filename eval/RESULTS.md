@@ -36,6 +36,11 @@ Pi 1.6.0 via CLIProxyAPI used the current `deepseek-v4.1-flash` model ID at
 This is a separate candidate lane. The run recorded 0
 raw bait exposures and zero structured detections across all 261 draws.
 
+DeepSeek's official V4.1 Flash release is `DeepSeek-V4.1-Flash-1017`, served
+under the first-party `deepseek-flash` API ID. The managed proxy run recorded
+`deepseek-v4.1-flash` as the requested ID. Its trace does not identify the
+upstream snapshot. [DeepSeek release notes](https://api-docs.deepseek.com/updates/#deepseek-v41-flash-1017-update)
+
 | Model | Balanced | Anchored recall | Tier 1 | False positives | Invalid | Noise | Mean | Public status |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | [DeepSeek V4.1 Flash high](results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | 95.75% | 92.90% | 21/21 | 1/72 | 0/261 | 0.044 | 30.4 s | Rank 1 at publication |

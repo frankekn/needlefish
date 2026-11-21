@@ -312,3 +312,28 @@ export function compareLanes(a: Lane, b: Lane): number {
   );
 }
 
+export function latestModelLanes(lanes: readonly Lane[]): Lane[] {
+  const latest = new Map<string, Lane>();
+  for (const lane of lanes) {
+    const previous = latest.get(lane.config.name);
+    if (!previous || Date.parse(lane.report.createdAt) > Date.parse(previous.report.createdAt)) {
+      latest.set(lane.config.name, lane);
+    }
+  }
+  return [...latest.values()];
+}
+
+const HARNESS_NAMES: Record<Report["runner"], string> = {
+  acp: "ACP",
+  claude: "Claude Code",
+  codex: "Codex CLI",
+  grok: "Grok CLI",
+  opencode: "OpenCode",
+  openai: "OpenAI API",
+  pi: "Pi",
+};
+
+export function harnessLabel(report: PublishedReport): string {
+  const version = report.runnerVersion ?? "";
+  return /^v?\d/.test(version) ? `${HARNESS_NAMES[report.runner]} ${version}` : version;
+}

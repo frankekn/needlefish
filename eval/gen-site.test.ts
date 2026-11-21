@@ -127,6 +127,21 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /seed 6ba00010/);
 });
 
+test("renderSite shows the newest run per model with its ID and harness, preserving older reports", () => {
+  const { manifest, lanes } = setup();
+  const [deployed, earlier, newer] = lanes;
+  const current = {
+    config: { ...newer.config, name: earlier.config.name, model: "model-1017" },
+    report: { ...newer.report, model: "model-1017", createdAt: "2026-10-17T00:00:00Z", runnerVersion: "1.6.0" },
+  };
+  const configured = [deployed, current, earlier];
+  const html = renderSite({ ...manifest, lanes: configured.map(lane => lane.config) }, configured, canonical);
+  assert.equal(html.match(/<summary>Candidate A /g)?.length, 1);
+  assert.match(html, /<th scope="col">Harness<\/th>/);
+  assert.match(html, /<code class="model-id">model-1017<\/code><\/summary><\/details><\/th><td>Codex CLI 1\.6\.0<\/td>/);
+  assert.match(html, /<h3>Earlier runs<\/h3><ul><li><a href="[^"]+candidate-a\.json">/);
+});
+
 test("renderSite rejects a reproduction command that overwrites its raw report", () => {
   const { manifest, lanes } = setup();
   const unsafe = lanes.map((lane) => ({
