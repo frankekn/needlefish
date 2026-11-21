@@ -8,6 +8,27 @@ paths.
 The 84-fixture suite is retired. Use the [public benchmark preflight](../docs/reference.md#public-benchmark-preflight)
 for new public scores. The results below preserve the original measurements.
 
+## 2026-11-21 — GPT and Claude on the public benchmark
+
+All lanes used Pi 1.6.0. GPT used Magpie and Claude used CLIProxyAPI.
+Each lane completed 261 draws. The initial Tier 1 stage was checkpointed and
+resumed, preserving all 21 valid draws per lane in the final reports. Both GPT
+lanes exceeded the 0.12 positive-fixture noise gate. All four reports recorded
+zero raw bait exposures and zero structured detections.
+
+| Model | Balanced | Anchored recall | Tier 1 | False positives | Invalid | Noise | Mean | Public status |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| [Claude Opus 5.5 medium](results/2026-11-21-public87-opus-x3.json) | 95.90% | 91.80% | 21/21 | 0/72 | 1/261 | 0.066 | 27.8 s | Rank 1 at publication |
+| [Claude Sonnet 5.5 high](results/2026-11-21-public87-sonnet-x3.json) | 95.08% | 90.16% | 21/21 | 0/72 | 4/261 | 0.011 | 21.5 s | Rank 6 at publication |
+| [GPT-6.2 Sol medium](results/2026-11-21-public87-sol-x3.json) | 86.90% | 89.07% | 20/21 | 11/72 | 2/261 | 0.240 | 39.6 s | Below gate |
+| [GPT-6.1 Terra high](results/2026-11-21-public87-terra-x3.json) | 88.01% | 88.52% | 20/21 | 9/72 | 0/261 | 0.230 | 30.9 s | Below gate |
+
+The archived execution commit is `a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92`.
+All 87 fixtures ran three times, including sealed holdouts. Prompt
+`e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2. Each report
+has trace diagnostics for all 255 model-reviewed draws and six docs fast paths.
+
 ## 2026-11-21 — Magpie GPT and Claude on the 84-fixture benchmark
 
 **退役版本。** 此輪使用 Needlefish 0.4.1 的 84 案例套件。新模型的公開榜

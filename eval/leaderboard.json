@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-13",
+  "updated": "2026-11-21",
   "baseline": "results/2026-09-06-codex-gpt56-terra-xhigh-x3.json",
   "lanes": [
     {
@@ -135,6 +135,38 @@
       "name": "Muse Wonder 1.0",
       "runner": "acp",
       "model": "muse-wonder-1.0",
+      "effort": "high",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-21-public87-opus-x3.json",
+      "name": "Claude Opus 5.5",
+      "runner": "pi",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-21-public87-sonnet-x3.json",
+      "name": "Claude Sonnet 5.5",
+      "runner": "pi",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-21-public87-sol-x3.json",
+      "name": "GPT-6.2 Sol",
+      "runner": "pi",
+      "model": "codex/gpt-6.2-sol",
+      "effort": "medium",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-21-public87-terra-x3.json",
+      "name": "GPT-6.1 Terra",
+      "runner": "pi",
+      "model": "codex/gpt-6.1-terra",
       "effort": "high",
       "status": "Candidate"
     }

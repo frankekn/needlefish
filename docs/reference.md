@@ -610,7 +610,7 @@ author gets.
 
 [Generated leaderboard](../README.md#benchmarks)
 
-**Latest ranked result, 2026-10-13:** Muse Code 1.4.7 ran `muse-wonder-1.0`
+**Ranked result, 2026-10-13:** Muse Code 1.4.7 ran `muse-wonder-1.0`
 at `high` on the benchmark's frozen pipeline, all 87 fixtures × 3 draws.
 Balanced score 90.47%, recall 93.44%, Tier-1 100%, FP 12.50%, invalid 0%,
 positive noise 0.060, and mean 35.8s. It qualifies as a Candidate in the tied
