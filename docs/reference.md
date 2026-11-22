@@ -6,8 +6,8 @@
 
 Local mode is read-only: Markdown to stdout, no GitHub writes.
 
-Run published v0.4.10 from the repository root, and pass a root path to `--repo`.
-The unreleased source resolves subdirectory invocations to Git's work-tree top
+Run published v0.4.11 from the repository root, and pass a root path to `--repo`.
+Version 0.4.11 resolves subdirectory invocations to Git's work-tree top
 level for paths, root `AGENTS.md`, and cache placement.
 
 **Committed work** — run from inside the target repo, or point `--repo` at it
@@ -393,9 +393,8 @@ for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
 The `openai` HTTP runner has no repository-reading tools. All model review
-paths, including the small-diff critic, require those tools. The unreleased
-source rejects every HTTP model review before any request. Published v0.4.10
-does not guarantee that refusal. Use a recommended CLI runner, such as
+paths, including the small-diff critic, require those tools. Version 0.4.11
+rejects every HTTP model review before any request. Use a recommended CLI runner, such as
 `codex`, `claude`, or `opencode`. Docs-only skips remain supported.
 `--dry-run` applies the same capability check, and `doctor` reports the same
 restriction.
@@ -517,7 +516,7 @@ via the full path:
 
 ## Status
 
-v0.4.10. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.11. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/no longer reported across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl), local `--dry-run` bundle preview, machine-readable skip reasons,

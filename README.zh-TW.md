@@ -15,8 +15,8 @@ Needlefish 在 merge 前審查 Git 變更中的缺陷。審查與 critic 篩選 
 
 使用可信任的 Git repo。需要 Node 20 以上、Git 2.41 以上，以及已登入的
 `codex`、`claude` 或 `opencode` CLI，並讓 CLI 位於 `PATH`。
-已發布的 v0.4.10 CLI 請從 repo 根目錄執行。
-完整參考描述目前的原始碼，包含尚未發布的變更。
+已發布的 v0.4.11 CLI 請從 repo 根目錄執行。
+完整參考描述目前的原始碼行為。
 
 ```bash
 npx needlefish doctor
@@ -31,7 +31,7 @@ npx needlefish
 
 Worktree 有變更時，會審查 staged、unstaged 與符合收集條件的 untracked
 變更。乾淨 branch 則審查 merge-base 到 `HEAD`。使用 `--base <ref>` 可指定
-基準。從子目錄自動解析至 repo 根目錄是尚未發布的原始碼變更。
+基準。從子目錄自動解析至 repo 根目錄已包含在 v0.4.11。
 
 ```bash
 npx needlefish --uncommitted
@@ -82,8 +82,7 @@ Dry-run JSON 的格式不同。欄位與 outcome 詳見
 | 審查逾時 | 檢查故障與 runner log，確認原因後才調整 timeout。缺少輸出不能當成通過。 |
 
 `openai` HTTP runner 無法檢查 repo 檔案。大型或 deep 審查請改用有工具
-能力的 CLI runner。模型呼叫前拒絕執行是尚未發布的原始碼防護，不是
-v0.4.10 的保證。
+能力的 CLI runner。模型呼叫前拒絕執行是 v0.4.11 的保證。
 
 完整細節見 [timeout 與 runner 選項](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#runners) 及
 [GitHub 認證](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#hosted任何-repo)。

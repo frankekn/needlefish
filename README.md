@@ -16,8 +16,8 @@ critic filter the findings. Fixed rules derive the final verdict.
 
 Use a trusted Git repository. You need Node 20+, Git 2.41+, and an authenticated
 `codex`, `claude`, or `opencode` CLI on `PATH`.
-Run the published v0.4.10 CLI from the repository root.
-The full reference describes current source, including unreleased changes.
+Run the published v0.4.11 CLI from the repository root.
+The full reference describes current source behavior.
 
 ```bash
 npx needlefish doctor
@@ -38,7 +38,7 @@ Read the provider's data and billing terms before reviewing private code.
 A dirty worktree reviews staged, unstaged, and eligible untracked changes.
 A clean branch reviews merge-base to `HEAD`. Use `--base <ref>` to override
 the detected base. Automatic resolution from a subdirectory to the repository
-root is an unreleased source change.
+root is included in v0.4.11.
 
 ```bash
 npx needlefish --uncommitted
@@ -93,8 +93,7 @@ Dry-run JSON has a different shape. See the
 
 The `openai` HTTP runner cannot inspect repository files. Use a recommended
 CLI runner, such as `codex`, `claude`, or `opencode`, for any model review.
-Refusal before a model call is an unreleased source guard, not a v0.4.10
-guarantee.
+Refusal before a model call is part of the v0.4.11 guarantee.
 
 [Timeouts and runner options](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners) and
 [GitHub authentication](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#hosted-any-repo) contain the full details.

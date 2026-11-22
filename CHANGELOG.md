@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.11 — 2026-11-22
+
+- GitHub: scope automatic reconciliation retries to the active PR head and
+  count each workflow receipt once. Explicit `recheck` rounds remain a reset
+  boundary, and superseded checks finish as `cancelled` (#308).
 
 - Review delivery: `needs_human` now fails the existing `Needlefish` check
   and states that review is incomplete or human confirmation is required.

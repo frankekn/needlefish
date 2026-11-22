@@ -6,8 +6,8 @@
 
 本機模式是唯讀的：Markdown 輸出到 stdout，不寫入 GitHub。
 
-已發布的 v0.4.10 請從 repo 根目錄執行，`--repo` 也請指定根目錄。
-尚未發布的原始碼會將子目錄解析至 Git work-tree 根目錄，供檔案路徑、
+已發布的 v0.4.11 請從 repo 根目錄執行，`--repo` 也請指定根目錄。
+v0.4.11 會將子目錄解析至 Git work-tree 根目錄，供檔案路徑、
 根目錄 `AGENTS.md` 與快取位置使用。
 
 **已提交的工作**——在目標 repo 內執行，或從任意位置用 `--repo` 指向
@@ -290,8 +290,8 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 `acp`。
 
 `openai` HTTP runner 沒有讀取 repo 的工具。所有模型審查路徑，包括小型 diff
-的 critic，都需要這些工具。尚未發布的原始碼會在 HTTP request 前拒絕所有
-HTTP 模型審查。已發布的 v0.4.10 不保證事前拒絕。請改用建議的 CLI runner，
+的 critic，都需要這些工具。v0.4.11 會在 HTTP request 前拒絕所有 HTTP
+模型審查。請改用建議的 CLI runner，
 例如 `codex`、`claude` 或 `opencode`。純文件 fast path 仍可使用。
 `--dry-run` 套用同一個能力檢查，`doctor` 也回報同樣的限制。
 
@@ -406,7 +406,7 @@ alias）。不做此步驟時，請用完整路徑呼叫：
 
 ## 狀態
 
-v0.4.10。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
+v0.4.11。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
 fresh／open／未再回報）、純文件 fast path（不呼叫模型）、same-head
 dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）、本地
 `--dry-run` bundle 預覽、機器可讀的 skip reason、非阻塞 scope callouts，以及
