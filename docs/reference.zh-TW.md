@@ -128,9 +128,8 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 若要擋下未完成的審查，請在 consumer repo 把既有的 `Needlefish` check 設為
 required，不需要 strict flag 或新服務；Needlefish 不會修改 branch
 protection。升級後 `needs_human` 從 `neutral` 改為 `failure`，原本接受它
-的 workflow 現在必須重試或取得人工確認。superseded 與 untrusted-author
-skipped 的 check 維持原本的 neutral。docs-only policy skip 以成功的 `pass`
-check 完成。
+的 workflow 現在必須重試或取得人工確認。被取代的 check 以 `cancelled` 結束。
+不可信作者的政策跳過以 `neutral` 結束，純文件變更的政策跳過以 `pass` 結束。
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
 event：`GITHUB_TOKEN` bot 無法正式 approve PR，而 sticky 的 blocking
@@ -228,10 +227,8 @@ Caller 保留 `workflow_dispatch.inputs.pr_number`、`actions: write`，以及�
 `GH_TOKEN`，並把 `NEEDLEFISH_CHECK_APP_ID` 設為該 App 的數字 ID。ID 可從
 GitHub App 設定頁，或該 App 建立之 check 的 `app.id` 欄位取得。此 pin 只驗證
 check 的擁有者，不會選擇或產生 token。內建 reusable workflow 使用
-`secrets.GITHUB_TOKEN`，不接受自訂 App token；它在 review 與 reconciliation
-時清除 `NEEDLEFISH_CHECK_APP_ID`，因此 repository variable 與 runner 環境的
-pin 都無法覆蓋其 GitHub Actions 身分。自訂 App pin 只適用於直接 CLI 使用；
-token 與 App pin 不符時 fail closed。
+`secrets.GITHUB_TOKEN`，reconciliation 驗證 GitHub Actions app 身分。自訂 App pin
+只適用於直接 CLI 使用。token 與 App pin 不符時 fail closed。
 未設定 pin 時，新 check 與 recovery 只接受 GitHub Actions 建立的 check。
 若 direct PR trigger 要使用專用 fleet，設定 repository variable
 `NEEDLEFISH_RUNS_ON` 為操作者持有的 runner label；未設定時維持 `self-hosted`。

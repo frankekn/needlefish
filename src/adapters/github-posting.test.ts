@@ -1223,7 +1223,7 @@ test("runGithub skips posting when the PR head changes after review", async (t) 
 		conclusion?: unknown;
 		output?: { title?: unknown; summary?: unknown };
 	};
-	assert.equal(completedPayload.conclusion, "neutral");
+	assert.equal(completedPayload.conclusion, "cancelled");
 	assert.match(String(completedPayload.output?.title ?? ""), /superseded/);
 	assert.match(
 		String(completedPayload.output?.summary ?? ""),
@@ -2904,7 +2904,7 @@ test("runGithub reports closed_pr when the PR closes during review", async (t) =
 		conclusion?: unknown;
 		output?: { summary?: unknown };
 	};
-	assert.equal(completedPayload.conclusion, "neutral");
+	assert.equal(completedPayload.conclusion, "cancelled");
 	assert.match(
 		String(completedPayload.output?.summary ?? ""),
 		/reason=closed_pr/,
@@ -3003,7 +3003,7 @@ test("review error on a stale head closes the pending check as superseded", (t) 
 		output?: { title?: unknown; summary?: unknown };
 	};
 	assert.equal(payload.status, "completed");
-	assert.equal(payload.conclusion, "neutral");
+	assert.equal(payload.conclusion, "cancelled");
 	assert.match(String(payload.output?.title ?? ""), /superseded/);
 	assert.match(
 		String(payload.output?.summary ?? ""),
@@ -3049,7 +3049,7 @@ test("review error on a closed PR closes the pending check as superseded", (t) =
 		output?: { title?: unknown; summary?: unknown };
 	};
 	assert.equal(payload.status, "completed");
-	assert.equal(payload.conclusion, "neutral");
+	assert.equal(payload.conclusion, "cancelled");
 	assert.match(String(payload.output?.title ?? ""), /superseded/);
 	assert.match(String(payload.output?.summary ?? ""), /reason=closed_pr/);
 	assert.ok(
@@ -4560,7 +4560,7 @@ test("stale recovery finalizes only its owned check", async (t) => {
  const patches = posts.filter(p => p.args.includes("PATCH"));
  assert.equal(patches.length, 1);
  assert.ok(patches[0]?.args.includes("repos/frankekn/needlefish/check-runs/2"));
- assert.equal(lastCheckCompletion(posts).conclusion, "neutral");
+ assert.equal(lastCheckCompletion(posts).conclusion, "cancelled");
  assert.equal(reviewPostAttempts(posts, 131), 0);
  const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
  assert.ok(Array.isArray(checks) && isRecordLike(checks[0]) && isRecordLike(checks[1]));
@@ -4866,7 +4866,7 @@ for (const change of ["stale", "closed", "unknown"] as const) {
 		assert.ok(posts[1]!.args.includes("repos/frankekn/needlefish/check-runs/1"));
 		const terminal = JSON.parse(posts[1]!.payload);
 		assert.equal(terminal.status, "completed");
-		assert.equal(terminal.conclusion, change === "unknown" ? "failure" : "neutral");
+		assert.equal(terminal.conclusion, change === "unknown" ? "failure" : "cancelled");
 		assert.equal(terminal.output.title, change === "unknown" ? "Needlefish: review failed" : "Needlefish: superseded");
 		assert.equal(run.output.trim().split("\n").at(-1),
 			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":242,"headSha":"${fixture.headSha}"}`);
@@ -5123,6 +5123,7 @@ function receiptRoundCheck(fixture: Fixture, id: number, conclusion: string, tit
 for (const [conclusion, title] of [
 	["failure", "Needlefish: review terminated"],
 	["failure", "Needlefish: review failed"],
+	["cancelled", "Needlefish: superseded"],
 	["neutral", "Needlefish: superseded"],
 	["neutral", "Needlefish: needs_human"],
 ] as const) {
@@ -5138,6 +5139,31 @@ for (const [conclusion, title] of [
 		assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
 	});
 }
+
+test("superseded rounds leave recovery available when the head returns", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+	writeFileSync(fixture.checksState, JSON.stringify(["neutral", "cancelled"].map((conclusion, index) => ({
+		...receiptRoundCheck(fixture, index + 1, conclusion, "Needlefish: superseded"),
+		external_id: JSON.stringify({ v: 2, prNumber: 109, roundId: `superseded-${index}`, runId: "fixture-run", recheck: false }),
+	}))));
+	await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+	assert.equal(runnerInvocationCount(fixture), 2);
+});
+
+test("a superseded recheck still resets the recovery budget", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 110, rawReview: defaultRawReview() });
+	const round = (id: number, conclusion: string, title: string, recheck: boolean) => ({
+		...receiptRoundCheck(fixture, id, conclusion, title),
+		external_id: JSON.stringify({ v: 2, prNumber: 110, roundId: `round-${id}`, runId: "fixture-run", recheck }),
+	});
+	writeFileSync(fixture.checksState, JSON.stringify([
+		round(3, "cancelled", "Needlefish: superseded", true),
+		round(2, "failure", "Needlefish: review failed", false),
+		round(1, "failure", "Needlefish: review failed", false),
+	]));
+	await runGithub(fixture.repo, 110, { timeoutMs: 1000 });
+	assert.equal(runnerInvocationCount(fixture), 2);
+});
 
 test("a newer same-head pass still covers an older terminated check", async (t) => {
 	const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });

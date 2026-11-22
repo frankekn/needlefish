@@ -187,9 +187,8 @@ To block incomplete reviews, set the existing `Needlefish` check as required
 in the consumer repository. No strict flag or new service is needed. Needlefish
 does not change branch protection. On upgrade, `needs_human` changes from
 `neutral` to `failure`; workflows that accepted it must now retry or obtain
-human confirmation. Superseded and untrusted-author skipped checks keep their
-existing neutral status. Docs-only policy skips complete as successful `pass`
-checks.
+human confirmation. Superseded checks complete as `cancelled`. Untrusted-author
+policy skips complete as `neutral`, and docs-only policy skips complete as `pass`.
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
 the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking
@@ -298,11 +297,9 @@ For direct CLI use with a custom GitHub App, provide its installation token as
 `GH_TOKEN` and set `NEEDLEFISH_CHECK_APP_ID` to that App's numeric ID.
 Use the ID from its GitHub App settings or the `app.id` field of a check created
 by that App. The pin validates check ownership; it does not select or mint a token.
-The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
-custom App token. It clears `NEEDLEFISH_CHECK_APP_ID` for review and reconciliation,
-so repository variables and runner environment pins cannot override its GitHub
-Actions identity. Custom App pins apply only to direct CLI use, where a mismatched
-token and App pin fails closed.
+The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and checks for the
+GitHub Actions app during reconciliation. Custom App pins apply only to direct
+CLI use. A mismatch between the token and App pin fails closed.
 Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the
@@ -378,7 +375,7 @@ forwards the received signal to the runner process group, SIGKILLs it once
 signal exits at once. In GitHub mode
 it first completes its own in_progress `Needlefish` check inside that same
 grace: `failure` titled `Needlefish: review terminated` on the current head,
-or neutral `Needlefish: superseded` when the head moved or the PR closed.
+or `cancelled` titled `Needlefish: superseded` when the head moved or the PR closed.
 No review or comment is posted, and the completion's GitHub calls are cut off
 at the grace so a hung `gh` cannot hold the process. Keep the grace below the
 caller's forced kill: GitHub Actions sends SIGINT, SIGTERM 7.5 s later, then

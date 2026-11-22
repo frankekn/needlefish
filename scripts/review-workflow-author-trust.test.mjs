@@ -79,13 +79,14 @@ path=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --jq) jq_filter="$2"; shift 2 ;;
+    --paginate|--slurp) shift ;;
     -X|-f) shift 2 ;;
     *) path="$1"; shift ;;
   esac
 done
 case "$path" in
   repos/*/check-runs) exit 0 ;;
-  *"/check-runs?"*) jq -r "$jq_filter" "$STUB_ROOT/check-runs.json" ;;
+  *"/check-runs?"*) jq -s "$jq_filter" "$STUB_ROOT/check-runs.json" ;;
   *"/pulls/"*)
     if [ -n "\${STUB_PULLS_FAIL:-}" ]; then echo "HTTP 502" >&2; exit 1; fi
     jq -r "$jq_filter" "$STUB_ROOT/pull.json" ;;
@@ -330,7 +331,7 @@ test("reconcile treats the posted skip check as terminal and never dispatches th
 			{
 				pr: pull({ association: "NONE" }),
 				checkRuns: [
-					{ name: posted.name, app: { id: 15368, slug: "github-actions" }, external_id: posted.external_id, conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
+					{ id: 1, name: posted.name, app: { id: 15368, slug: "github-actions" }, external_id: posted.external_id, status: posted.status, conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
 				],
 			},
 		);

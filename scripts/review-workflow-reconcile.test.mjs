@@ -12,7 +12,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parse } from "yaml";
 import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
@@ -32,10 +31,15 @@ const script = workflowRun(
 
 const REPO = "acme/widgets";
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
+const OLD_HEAD = "f".repeat(40);
 const SELF_RUN_ID = "777";
 
-function checkRun(title, conclusion = "failure") {
-	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "fixture-round", runId: SELF_RUN_ID }), conclusion, output: { title } };
+function checkRun(title, conclusion = "failure", round = {}) {
+	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "fixture-round", runId: SELF_RUN_ID, ...round }), status: "completed", conclusion, output: { title } };
+}
+
+function precheck(runId, runAttempt = "1") {
+	return checkRun("Needlefish: review did not start", "failure", { roundId: `precheck-${runId}-${runAttempt}`, runId, runAttempt });
 }
 
 function activeRun(id, title) {
@@ -51,8 +55,13 @@ function runReconcile({
 	headRepo = REPO,
 	checkRunsAll = [],
 	checkRunsLatest = null,
-	activeRuns = [],
-	completedRuns = [],
+	oldChecks = [],
+	activeRuns = {},
+	reviewHead = "",
+	reviewResult = "skipped",
+	runAttempt = "1",
+	attemptStart = "2026-11-22T08:00:00Z",
+	eventHead = "",
 	workflowMissing = false,
 	workflowRef = `${REPO}/.github/workflows/review.yml@refs/heads/main`,
 } = {}) {
@@ -60,17 +69,21 @@ function runReconcile({
 	const fakeBin = join(root, "fake-bin");
 	const ghLog = join(root, "gh.log");
 	mkdirSync(fakeBin);
+	const numbered = (checks) => checks.map((check, index) => ({ id: index + 1, ...check }));
 	const latest =
 		checkRunsLatest ??
 		// GitHub's default filter=latest: one run per check name, the newest.
 		(checkRunsAll.length > 0 ? [checkRunsAll[checkRunsAll.length - 1]] : []);
 	const responses = {
 		pulls: JSON.stringify({ state, head: { sha: HEAD, repo: { full_name: headRepo } } }),
-		checkRunsAll: JSON.stringify({ check_runs: checkRunsAll }),
+		checkRunsAll: JSON.stringify([{ check_runs: numbered(checkRunsAll) }]),
+		oldChecks: JSON.stringify([{ check_runs: numbered(oldChecks) }]),
 		checkRunsLatest: JSON.stringify({ check_runs: latest }),
-		activeRuns: JSON.stringify({ workflow_runs: activeRuns }),
-		completedRuns: JSON.stringify({ workflow_runs: completedRuns }),
+		...Object.fromEntries(["queued", "pending", "waiting", "requested", "in_progress"].map(status => [
+			status, JSON.stringify([{ workflow_runs: activeRuns[status] ?? [] }]),
+		])),
 		workflow: JSON.stringify({ id: 1, path: ".github/workflows/review.yml" }),
+		attempt: JSON.stringify({ run_started_at: attemptStart }),
 		repo: JSON.stringify({ default_branch: "main" }),
 	};
 	writeFileSync(join(root, "responses.json"), JSON.stringify(responses));
@@ -91,17 +104,20 @@ path=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --jq) jq_filter="$2"; shift 2 ;;
+    --paginate|--slurp) shift ;;
     -X|-f) shift 2 ;;
     *) path="$1"; shift ;;
   esac
 done
 case "$path" in
+  *"/commits/${OLD_HEAD}/check-runs?"*) body=$(pick oldChecks) ;;
   *"/check-runs?"*"filter=all"*) body=$(pick checkRunsAll) ;;
   *"/check-runs?"*) body=$(pick checkRunsLatest) ;;
-  repos/*/check-runs) body='{}' ;;
-  *"/actions/workflows/"*"/runs?status=completed&per_page=100") body=$(pick completedRuns) ;;
-  *"/actions/workflows/"*"/runs?"*) body=$(pick activeRuns) ;;
-  *"/actions/runs?"*) body='{"workflow_runs": []}' ;;
+  repos/*/check-runs|repos/*/check-runs/*) body='{}' ;;
+  *"/actions/workflows/"*"/runs?status="*)
+    status="\${path#*status=}"
+    body=$(pick "\${status%%&*}") ;;
+  *"/actions/runs/"*"/attempts/"*) body=$(pick attempt) ;;
   *"/actions/workflows/"*)
     if [ "$WORKFLOW_MISSING" = "1" ]; then echo "HTTP 404" >&2; exit 1; fi
     body=$(pick workflow) ;;
@@ -121,11 +137,15 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			GH_TOKEN: "test-token",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_NUM: prNum,
-   NEEDLEFISH_CHECK_APP_ID: parse(workflow).jobs.reconcile.steps[0].env.NEEDLEFISH_CHECK_APP_ID === "" ? "" : appId,
+			NEEDLEFISH_CHECK_APP_ID: appId,
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
-			GITHUB_RUN_ATTEMPT: "1",
+			GITHUB_RUN_ATTEMPT: runAttempt,
+			REVIEW_HEAD: reviewHead,
+			REVIEW_RESULT: reviewResult,
+			EVENT_PR: eventHead ? prNum : "",
+			EVENT_HEAD: eventHead,
 			WORKFLOW_REF: workflowRef,
 			WORKFLOW_MISSING: workflowMissing ? "1" : "0",
 		},
@@ -201,23 +221,23 @@ for (const title of [
 	});
 }
 
-test("reconcile waits for an active run of the same workflow for the same PR", () => {
-	const r = runReconcile({
-		checkRunsAll: [INFRA],
-		activeRuns: [activeRun(900, "needlefish-review PR #42")],
+for (const status of ["queued", "pending", "waiting", "requested", "in_progress"]) {
+	test(`reconcile waits for a ${status} run of the same workflow and PR`, () => {
+		const r = runReconcile({ activeRuns: { [status]: [activeRun(900, "caller PR #42")] } });
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.dispatched, 0);
+		assert.match(r.stdout, new RegExp(`is ${status}; letting it finish`));
 	});
-	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /still active or queued/);
-});
+}
 
 test("reconcile ignores its own run and runs for other PRs when counting active runs", () => {
 	const r = runReconcile({
 		checkRunsAll: [INFRA],
-		activeRuns: [
+		activeRuns: { in_progress: [
 			activeRun(Number(SELF_RUN_ID), "needlefish-review PR #42"),
 			activeRun(901, "needlefish-review PR #420"),
 			activeRun(902, "needlefish-review PR #7"),
-		],
+		] },
 	});
 	assert.equal(r.dispatched, 1, r.stdout + r.stderr);
 });
@@ -254,13 +274,14 @@ test("reconcile reports a missing caller workflow before querying its runs", () 
 			.map((match) => [match[1], match[2]]),
 	);
 	assert.deepEqual(JSON.parse(fields.external_id), {
-		v: 2, prNumber: 42, roundId: "retry-required-777-1", runId: "777",
+		v: 2, prNumber: 42, roundId: "retry-required-777-1", runId: "777", runAttempt: "1",
 	});
 	const repeated = runReconcile({
 		workflowMissing: true,
 		checkRunsAll: [{
 			name: fields.name,
 			app: { id: 15368, slug: "github-actions" },
+			status: fields.status,
 			external_id: fields.external_id,
 			conclusion: fields.conclusion,
 			output: { title: fields["output[title]"] },
@@ -280,42 +301,120 @@ test("reconcile rejects a PR number containing regex syntax before any API call"
 	assert.doesNotMatch(r.log, /api/);
 });
 
-test("reconcile caps three completed failed runs before any check-run exists", () => {
+test("reconcile counts failed dispatch attempts on the resolved head and stops at three", () => {
 	const r = runReconcile({
-		completedRuns: [1, 2, 3].map((id) => ({
-			...activeRun(id, "needlefish-review PR #42"),
-			conclusion: "failure",
-		})),
+		reviewHead: HEAD, reviewResult: "failure", runAttempt: "3",
+		checkRunsAll: [precheck(SELF_RUN_ID), precheck(SELF_RUN_ID, "2")],
 	});
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
+	assert.match(r.stdout, /3 failures before a review check; retry cap reached/);
+	assert.ok(r.log.includes(`head_sha=${HEAD}`));
+	assert.match(r.log, /precheck-777-3/);
 });
 
-test("reconcile dispatches below the completed-run cap and ignores other PRs and conclusions", () => {
+test("reconcile ignores receipts owned by another PR and charges a dispatch once", () => {
 	const r = runReconcile({
-		completedRuns: [
-			{ ...activeRun(1, "needlefish-review PR #42"), conclusion: "failure" },
-			{ ...activeRun(2, "needlefish-review PR #42"), conclusion: "failure" },
-			{ ...activeRun(3, "needlefish-review PR #420"), conclusion: "failure" },
-			{ ...activeRun(4, "needlefish-review PR #7"), conclusion: "failure" },
-			{ ...activeRun(5, "needlefish-review PR #42"), conclusion: "success" },
-		],
+		reviewHead: HEAD, reviewResult: "failure",
+		checkRunsAll: [precheck("100"), precheck("100"), {
+			...precheck("200"), external_id: JSON.stringify({ v: 2, prNumber: 99, roundId: "precheck-200-1", runId: "200", runAttempt: "1" }),
+		}],
 	});
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 1);
+	assert.match(r.log, /precheck-777-1/);
 });
 
-test("reconcile includes cancelled runs in the completed-run cap", () => {
+test("reconcile charges a cancellation on the current head before review starts", () => {
 	const r = runReconcile({
-		completedRuns: ["failure", "cancelled", "cancelled"].map((conclusion, id) => ({
-			...activeRun(id, "needlefish-review PR #42"),
-			conclusion,
-		})),
+		eventHead: HEAD, reviewResult: "cancelled",
+		checkRunsAll: [precheck("100"), precheck("200")],
 	});
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
+	assert.match(r.stdout, /3 failures before a review check; retry cap reached/);
+});
+
+test("reconcile leaves a cancelled pre-review attempt uncharged when another run is queued", () => {
+	const r = runReconcile({
+		eventHead: HEAD, reviewResult: "cancelled",
+		activeRuns: { queued: [activeRun(900, "caller PR #42")] },
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	assert.doesNotMatch(r.log, /api -X POST/);
+	assert.match(r.stdout, /is queued; letting it finish/);
+});
+
+test("a rerun failure before a check is not masked by an earlier check from an old binary", () => {
+	const r = runReconcile({
+		reviewHead: HEAD, reviewResult: "failure", runAttempt: "2",
+		checkRunsAll: [{ ...INFRA, started_at: "2026-11-22T07:59:59Z" }],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+	assert.match(r.log, /precheck-777-2/);
+});
+
+test("a check from the old binary during the current rerun prevents a duplicate charge", () => {
+	const r = runReconcile({
+		reviewHead: HEAD, reviewResult: "failure", runAttempt: "2",
+		checkRunsAll: [{ ...INFRA, started_at: "2026-11-22T08:00:01Z" }],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+	assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+test("reconcile cancels the old binary's superseded check and does not charge the new head", () => {
+	const r = runReconcile({
+		reviewHead: OLD_HEAD, reviewResult: "cancelled",
+		oldChecks: [precheck("100"), precheck("200"), precheck("300"), checkRun("Needlefish: superseded", "neutral")],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+	assert.match(r.log, /PATCH repos\/acme\/widgets\/check-runs\/4.*conclusion=cancelled/);
+	assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+test("reconcile repairs a superseded check when its SHA is the head again", () => {
+	const r = runReconcile({ checkRunsAll: [
+		checkRun("Needlefish: pass", "success"),
+		{ ...checkRun("Needlefish: superseded", "neutral"), external_id: "123456" },
+	] });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+	assert.match(r.log, /PATCH repos\/acme\/widgets\/check-runs\/2.*conclusion=cancelled/);
+});
+
+test("reconcile closes a current orphan as an infra failure without creating a precheck receipt", () => {
+	const r = runReconcile({
+		reviewHead: HEAD, reviewResult: "cancelled",
+		checkRunsAll: [INFRA, { ...checkRun("", null), status: "in_progress" }],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	assert.match(r.log, /PATCH repos\/acme\/widgets\/check-runs\/2.*conclusion=failure/);
+	assert.doesNotMatch(r.log, /precheck-777-1/);
+	assert.match(r.stdout, /2 infra-failed reviews; retry cap reached/);
+});
+
+test("an infra check and workflow receipt for one attempt do not both spend retry budget", () => {
+	const r = runReconcile({
+		reviewHead: HEAD, reviewResult: "failure",
+		checkRunsAll: [precheck("100"), precheck("200"), precheck(SELF_RUN_ID), INFRA],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+	assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+test("an unattributable dispatch failure is visible and leaves automatic retries stopped", () => {
+	const r = runReconcile({ reviewResult: "failure" });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	assert.match(r.log, /caller retry required/);
+	assert.match(r.log, /did not record its target commit/);
 });
 
 
