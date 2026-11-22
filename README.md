@@ -197,33 +197,35 @@ block stays here unchanged so future publication uses the same source of truth.
 
 **Updated 2026-11-21** — measured 2026-09-06 to 2026-11-21; all 22 published lanes at 87 scenarios × 3 draws, sealed holdouts included, Class R gate, anti-cheat v2; baseline commit `a5a0c68`, prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`; every report has `cheatDetectedCount: 0`.
 
+Scoring v2: positive fixtures are macro-averaged over the frozen families, negative fixtures remain equally weighted, and both sides count 50%. Tier-1, anti-cheat, and positive noise remain separate gates.
+
 Each model shows its latest scored run. The model ID is the value passed to the harness. Expand a model on the benchmark page to find earlier runs.
 
 **Ranked lanes.** **Deployed lane: DeepSeek V4.1 Flash (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.
 
 | Rank | Model | Model ID | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |
 | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | [Claude Opus 5.5](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-opus-x3.json) | `claude-opus-5-5` | Pi 1.6.0 | medium | **95.90%** | 92.8%–99.0% | 100% | 0.00% | 0.066 | 28s |
-| 1 | [DeepSeek V4.1 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | `deepseek-v4.1-flash` | Pi 1.6.0 | high | 95.75% | 92.8%–98.7% | 100% | 1.39% | 0.044 | 30s |
-| 1 | [Qwen 3.8 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-qwen38-flash-max-x3.json) | `qwen3.8-flash` | Pi 0.85.1 | max | 95.63% | 92.7%–98.6% | 95% | 0.00% | 0.055 | 118s |
-| 1 | [Grok 4.6](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-grok-grok46-xhigh-x3.json) | `grok-4.6` | Grok CLI 1.0.13 | xhigh | 95.48% | 92.2%–98.8% | 100% | 1.39% | 0.011 | 230s |
-| 1 | [Grok 4.7](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-22-grok-47-high-x3.json) | `grok-4.7` | grok 1.0.40 | high | 95.48% | 92.3%–98.7% | 100% | 1.39% | 0.038 | 255s |
-| 1 | [Claude Sonnet 5.5](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-sonnet-x3.json) | `claude-sonnet-5-5` | Pi 1.6.0 | high | 95.08% | 91.7%–98.4% | 100% | 0.00% | 0.011 | **22s** |
-| 1 | [GLM-5.3-Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-glm53-flash-max-x3.json) | `glm-5.3-flash` | Pi 0.85.1 | max | 94.93% | 91.6%–98.3% | 100% | 1.39% | 0.038 | 208s |
-| 8 | [DeepSeek V4 Flash Vision Exp](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) | `cliproxy-deepseek/deepseek-v4-flash-vision-exp` | Pi 0.85.1 | max | 91.66% | 87.7%–95.6% | 95% | 1.39% | 0.022 | 116s |
-| 8 | [GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-gpt56-terra-xhigh-x3.json) | `gpt-5.6-terra` | Pi 0.85.1 | xhigh | 91.61% | 86.7%–96.5% | 95% | 6.94% | 0.077 | 76s |
-| 8 | [Muse Wonder 1.0](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json) | `muse-wonder-1.0` | Muse Code 1.4.7 (1.4.7-R6101.1) | high | 90.47% | 83.9%–97.0% | 100% | 12.50% | 0.060 | 36s |
-| 8 | [GPT-6 Luna](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-23-codex-gpt6-luna-max-x3.json) | `gpt-6-luna` | Codex CLI 0.156.0 | max | 89.40% | 82.9%–95.9% | 95% | 6.94% | 0.087 | 129s |
-| 8 | [GPT-5.6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-sol-medium-x3.json) | `gpt-5.6-sol` | Codex CLI 0.153.4 | medium | 88.41% | 81.1%–95.7% | 100% | 13.89% | 0.077 | 75s |
+| 1 | [Claude Opus 5.5](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-opus-x3.json) | `claude-opus-5-5` | Pi 1.6.0 | medium | **95.73%** | 92.4%–99.1% | 100% | 0.00% | 0.066 | 28s |
+| 1 | [DeepSeek V4.1 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | `deepseek-v4.1-flash` | Pi 1.6.0 | high | 95.63% | 92.5%–98.8% | 100% | 1.39% | 0.044 | 30s |
+| 1 | [Grok 4.6](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-grok-grok46-xhigh-x3.json) | `grok-4.6` | Grok CLI 1.0.13 | xhigh | 95.34% | 91.8%–98.8% | 100% | 1.39% | 0.011 | 230s |
+| 1 | [Grok 4.7](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-22-grok-47-high-x3.json) | `grok-4.7` | grok 1.0.40 | high | 95.34% | 91.9%–98.7% | 100% | 1.39% | 0.038 | 255s |
+| 1 | [Qwen 3.8 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-qwen38-flash-max-x3.json) | `qwen3.8-flash` | Pi 0.85.1 | max | 95.24% | 92.0%–98.4% | 95% | 0.00% | 0.055 | 118s |
+| 1 | [Claude Sonnet 5.5](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-sonnet-x3.json) | `claude-sonnet-5-5` | Pi 1.6.0 | high | 95.04% | 91.5%–98.5% | 100% | 0.00% | 0.011 | **22s** |
+| 1 | [GLM-5.3-Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-glm53-flash-max-x3.json) | `glm-5.3-flash` | Pi 0.85.1 | max | 94.94% | 91.5%–98.4% | 100% | 1.39% | 0.038 | 208s |
+| 8 | [GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-gpt56-terra-xhigh-x3.json) | `gpt-5.6-terra` | Pi 0.85.1 | xhigh | 91.37% | 86.3%–96.5% | 95% | 6.94% | 0.077 | 76s |
+| 8 | [DeepSeek V4 Flash Vision Exp](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) | `cliproxy-deepseek/deepseek-v4-flash-vision-exp` | Pi 0.85.1 | max | 91.17% | 87.0%–95.4% | 95% | 1.39% | 0.022 | 116s |
+| 8 | [Muse Wonder 1.0](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json) | `muse-wonder-1.0` | Muse Code 1.4.7 (1.4.7-R6101.1) | high | 90.38% | 83.7%–97.0% | 100% | 12.50% | 0.060 | 36s |
+| 8 | [GPT-6 Luna](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-23-codex-gpt6-luna-max-x3.json) | `gpt-6-luna` | Codex CLI 0.156.0 | max | 89.09% | 82.4%–95.8% | 95% | 6.94% | 0.087 | 129s |
+| 8 | [GPT-5.6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-sol-medium-x3.json) | `gpt-5.6-sol` | Codex CLI 0.153.4 | medium | 88.00% | 80.6%–95.4% | 100% | 13.89% | 0.077 | 75s |
 
 **Unranked lanes**, same run — the interim gate requires at least 20/21 Tier-1 successes, at least 2/3 on every fixture, and positive noise no higher than 0.12; a later x3 confirmation is recorded but does not restore the rank.
 
 | Model | Model ID | Harness | Effort | Balanced | Gate missed in the full report |
 | --- | --- | --- | --- | ---: | --- |
-| [GPT-6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-23-codex-gpt6-sol-medium-x3.json) | `gpt-6-sol` | Codex CLI 0.156.0 | medium | 89.97% | noise 0.153 > 0.12 |
-| [GPT-5.6 Luna](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-luna-max-x3.json) | `gpt-5.6-luna` | Codex CLI 0.153.4 | max | 88.43% | Tier-1 76.19%: `t1-inverted-guard` 0/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.1311 > 0.12 |
-| [GPT-6.1 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-terra-x3.json) | `codex/gpt-6.1-terra` | Pi 1.6.0 | high | 88.01% | noise 0.2295 > 0.12 |
-| [GPT-6.2 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-sol-x3.json) | `codex/gpt-6.2-sol` | Pi 1.6.0 | medium | 86.90% | noise 0.2404 > 0.12 |
+| [GPT-6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-23-codex-gpt6-sol-medium-x3.json) | `gpt-6-sol` | Codex CLI 0.156.0 | medium | 89.98% | noise 0.153 > 0.12 |
+| [GPT-5.6 Luna](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-luna-max-x3.json) | `gpt-5.6-luna` | Codex CLI 0.153.4 | max | 88.49% | Tier-1 76.19%: `t1-inverted-guard` 0/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.1311 > 0.12 |
+| [GPT-6.1 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-terra-x3.json) | `codex/gpt-6.1-terra` | Pi 1.6.0 | high | 87.70% | noise 0.2295 > 0.12 |
+| [GPT-6.2 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-11-21-public87-sol-x3.json) | `codex/gpt-6.2-sol` | Pi 1.6.0 | medium | 86.41% | noise 0.2404 > 0.12 |
 
 1 lane(s) had provider or infrastructure failures and are excluded from scoring; see the benchmark page and eval/RESULTS.md.
 <!-- benchmark:end -->

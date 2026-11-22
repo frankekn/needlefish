@@ -8,6 +8,11 @@ paths.
 The 84-fixture suite is retired. Use the [public benchmark preflight](../docs/reference.md#public-benchmark-preflight)
 for new public scores. The results below preserve the original measurements.
 
+The public leaderboard now uses `needlefish-score-v2`. Positive fixtures are
+macro-averaged over the frozen family map in `eval/leaderboard.json`; negative
+fixtures remain equally weighted. The two sides remain 50/50. Tier-1,
+anti-cheat, and positive-noise rules remain separate gates.
+
 ## 2026-11-21 — GPT and Claude on the public benchmark
 
 All lanes used Pi 1.6.0. GPT used Magpie and Claude used CLIProxyAPI.
@@ -502,7 +507,8 @@ Not ranked for operational reasons:
 
 - **Recall** is the share of planted defects found. A hit must match the
   expected pattern and anchor file in the same finding.
-- **Balanced Review Accuracy** is the arithmetic mean of anchored recall and
+- **Balanced Review Accuracy** in the public v2 leaderboard averages anchored
+  recall within the frozen positive fixture families, then averages that with
   usable specificity. An invalid model output cannot count as a correct result.
 - **Usable specificity** is the share of clean draws that produced valid output
   without a blocking false positive.

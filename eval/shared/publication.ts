@@ -28,6 +28,8 @@ export interface ExcludedConfig extends BlockedConfig {
 export interface LeaderboardManifest {
   readonly updated: string;
   readonly baseline: string;
+  readonly scoreVersion?: string;
+  readonly positiveFamilies?: Readonly<Record<string, string>>;
   readonly lanes: readonly LaneConfig[];
   readonly blocked: readonly BlockedConfig[];
   readonly excluded?: readonly ExcludedConfig[];
@@ -84,22 +86,27 @@ export function operationalFailures(report: PublishedReport): string[] {
   });
 }
 
-function reviewRates(report: PublishedReport): {
+function reviewRates(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): {
   readonly recall: number;
   readonly specificity: number;
   readonly falsePositiveRate: number;
 } {
   if (!report.fixtureKinds) throw new Error("fixture kinds are required");
-  let positives = 0;
-  let truePositives = 0;
+  const positiveGroups = new Map<string, { total: number; hits: number }>();
   let negatives = 0;
   let trueNegatives = 0;
   let falsePositives = 0;
   for (const result of report.results) {
     const kind = report.fixtureKinds[result.fixtureId];
     if (kind === "positive") {
-      positives += 1;
-      if (result.score.recall) truePositives += 1;
+      const group = positiveFamilies?.[result.fixtureId] ?? result.fixtureId;
+      const bucket = positiveGroups.get(group) ?? { total: 0, hits: 0 };
+      bucket.total += 1;
+      if (result.score.recall) bucket.hits += 1;
+      positiveGroups.set(group, bucket);
     } else if (kind === "negative") {
       negatives += 1;
       if (result.score.falsePositive) falsePositives += 1;
@@ -110,23 +117,33 @@ function reviewRates(report: PublishedReport): {
       throw new Error(`fixture kind is missing for ${result.fixtureId}`);
     }
   }
-  if (positives === 0 || negatives === 0) {
+  if (positiveGroups.size === 0 || negatives === 0) {
     throw new Error("positive and negative draws are required");
   }
   return {
-    recall: truePositives / positives,
+    recall:
+      [...positiveGroups.values()].reduce(
+        (sum, group) => sum + group.hits / group.total,
+        0,
+      ) / positiveGroups.size,
     specificity: trueNegatives / negatives,
     falsePositiveRate: falsePositives / negatives,
   };
 }
 
-export function balancedReviewAccuracy(report: PublishedReport): number {
-  const { recall, specificity } = reviewRates(report);
+export function balancedReviewAccuracy(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): number {
+  const { recall, specificity } = reviewRates(report, positiveFamilies);
   return (recall + specificity) / 2;
 }
 
-export function usableSpecificity(report: PublishedReport): number {
-  return reviewRates(report).specificity;
+export function usableSpecificity(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): number {
+  return reviewRates(report, positiveFamilies).specificity;
 }
 
 export function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
@@ -174,7 +191,10 @@ export function tierOneInterimGate(report: PublishedReport): TierOneInterimGate 
   return { hits, total, passed, perFixture };
 }
 
-export function displayedMetrics(report: PublishedReport): {
+export function displayedMetrics(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): {
   readonly recall: number;
   readonly falsePositiveRate: number;
   readonly invalidJsonRate: number;
@@ -182,7 +202,7 @@ export function displayedMetrics(report: PublishedReport): {
   readonly meanDurationMs: number;
   readonly meanNoisePerPositive: number;
 } {
-  const { recall, falsePositiveRate } = reviewRates(report);
+  const { recall, falsePositiveRate } = reviewRates(report, positiveFamilies);
   const positives = report.results.filter(
     (result) => report.fixtureKinds?.[result.fixtureId] === "positive",
   );
@@ -229,11 +249,12 @@ function sampleVariance(values: readonly number[]): number {
 function fixtureOutcomes(
   report: PublishedReport,
   kind: "positive" | "negative",
+  positiveFamilies?: Readonly<Record<string, string>>,
 ): number[] {
   if (!report.fixtures || !report.fixtureKinds) {
     throw new Error("fixture manifest and kinds are required");
   }
-  return report.fixtures
+  const outcomes = report.fixtures
     .filter((fixtureId) => report.fixtureKinds?.[fixtureId] === kind)
     .sort()
     .map((fixtureId) => {
@@ -246,11 +267,31 @@ function fixtureOutcomes(
         ),
       );
     });
+  if (kind === "negative" || !positiveFamilies) return outcomes;
+  const outcomeByFixture = new Map(
+    report.fixtures
+      .filter((fixtureId) => report.fixtureKinds?.[fixtureId] === kind)
+      .sort()
+      .map((fixtureId, index) => [fixtureId, outcomes[index]] as const),
+  );
+  const byFamily = new Map<string, number[]>();
+  report.fixtures
+    .filter((fixtureId) => report.fixtureKinds?.[fixtureId] === kind)
+    .forEach((fixtureId) => {
+      const family = positiveFamilies[fixtureId] ?? fixtureId;
+      const values = byFamily.get(family) ?? [];
+      values.push(outcomeByFixture.get(fixtureId) ?? 0);
+      byFamily.set(family, values);
+    });
+  return [...byFamily.values()].map(mean);
 }
 
-function scoreStandardError(report: PublishedReport): number {
-  const positives = fixtureOutcomes(report, "positive");
-  const negatives = fixtureOutcomes(report, "negative");
+function scoreStandardError(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): number {
+  const positives = fixtureOutcomes(report, "positive", positiveFamilies);
+  const negatives = fixtureOutcomes(report, "negative", positiveFamilies);
   return (
     0.5 *
     Math.sqrt(
@@ -260,15 +301,22 @@ function scoreStandardError(report: PublishedReport): number {
   );
 }
 
-export function scoreConfidenceInterval(report: PublishedReport): readonly [number, number] {
-  const score = balancedReviewAccuracy(report);
-  const margin = 1.96 * scoreStandardError(report);
+export function scoreConfidenceInterval(
+  report: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): readonly [number, number] {
+  const score = balancedReviewAccuracy(report, positiveFamilies);
+  const margin = 1.96 * scoreStandardError(report, positiveFamilies);
   return [Math.max(0, score - margin), Math.min(1, score + margin)];
 }
 
-function statisticallyTied(left: PublishedReport, right: PublishedReport): boolean {
-  const leftPositive = fixtureOutcomes(left, "positive");
-  const rightPositive = fixtureOutcomes(right, "positive");
+function statisticallyTied(
+  left: PublishedReport,
+  right: PublishedReport,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): boolean {
+  const leftPositive = fixtureOutcomes(left, "positive", positiveFamilies);
+  const rightPositive = fixtureOutcomes(right, "positive", positiveFamilies);
   const leftNegative = fixtureOutcomes(left, "negative");
   const rightNegative = fixtureOutcomes(right, "negative");
   const positiveDifferences = leftPositive.map(
@@ -284,29 +332,47 @@ function statisticallyTied(left: PublishedReport, right: PublishedReport): boole
       sampleVariance(negativeDifferences) / negativeDifferences.length,
     );
   return (
-    Math.abs(balancedReviewAccuracy(left) - balancedReviewAccuracy(right)) <=
+    Math.abs(
+      balancedReviewAccuracy(left, positiveFamilies) -
+        balancedReviewAccuracy(right, positiveFamilies),
+    ) <=
     1.96 * standardError
   );
 }
 
-export function statisticalRanks(lanes: readonly Lane[]): number[] {
+export function statisticalRanks(
+  lanes: readonly Lane[],
+  positiveFamilies?: Readonly<Record<string, string>>,
+): number[] {
   // Statistical non-separation is not transitive. Anchor each point-sorted
   // group to its highest-scoring lane so bridge lanes cannot collapse the
   // entire leaderboard into one rank.
   let groupStart = 0;
   return lanes.map((lane, index) => {
-    if (index > 0 && !statisticallyTied(lanes[groupStart].report, lane.report)) {
+    if (
+      index > 0 &&
+      !statisticallyTied(
+        lanes[groupStart].report,
+        lane.report,
+        positiveFamilies,
+      )
+    ) {
       groupStart = index;
     }
     return groupStart + 1;
   });
 }
 
-export function compareLanes(a: Lane, b: Lane): number {
-  const aMetrics = displayedMetrics(a.report);
-  const bMetrics = displayedMetrics(b.report);
+export function compareLanes(
+  a: Lane,
+  b: Lane,
+  positiveFamilies?: Readonly<Record<string, string>>,
+): number {
+  const aMetrics = displayedMetrics(a.report, positiveFamilies);
+  const bMetrics = displayedMetrics(b.report, positiveFamilies);
   return (
-    balancedReviewAccuracy(b.report) - balancedReviewAccuracy(a.report) ||
+    balancedReviewAccuracy(b.report, positiveFamilies) -
+      balancedReviewAccuracy(a.report, positiveFamilies) ||
     bMetrics.recall - aMetrics.recall ||
     aMetrics.falsePositiveRate - bMetrics.falsePositiveRate
   );

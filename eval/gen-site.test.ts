@@ -328,6 +328,21 @@ test("balancedReviewAccuracy counts an invalid negative once", () => {
   );
 });
 
+test("balancedReviewAccuracy macro-averages frozen positive families", () => {
+  const scored = {
+    ...report,
+    fixtureKinds: { easy: "positive", hard: "positive", other: "positive", negative: "negative" } as const,
+    results: [
+      { ...report.results[0], fixtureId: "easy", score: { ...report.results[0].score, recall: true, formatOk: true } },
+      { ...report.results[0], fixtureId: "hard", score: { ...report.results[0].score, recall: false, formatOk: true } },
+      { ...report.results[0], fixtureId: "other", score: { ...report.results[0].score, recall: false, formatOk: true } },
+      { ...report.results[0], fixtureId: "negative", score: { ...report.results[0].score, falsePositive: false, formatOk: true } },
+    ],
+  };
+  assert.equal(balancedReviewAccuracy(scored, { easy: "family-a", hard: "family-a", other: "family-b" }), 0.625);
+  assert.equal(balancedReviewAccuracy(scored, { easy: "family-a", hard: "family-b", other: "family-c" }), 0.6666666666666666);
+});
+
 test("renderSite excludes operational failures from model scoring", () => {
   const { manifest, lanes } = setup();
   const operational = lanes.map((lane, index) =>

@@ -111,6 +111,7 @@ export function renderBenchmarkBlock(
 ): string {
   const zh = locale === "zh-TW";
   const baseline = validateComparability(configured, manifest.baseline, canonical);
+  const positiveFamilies = manifest.positiveFamilies;
   const operational = configured.filter(
     ({ report }) => operationalFailures(report).length > 0,
   );
@@ -120,10 +121,10 @@ export function renderBenchmarkBlock(
   const latest = latestModelLanes(scored);
   const qualified = latest
     .filter(({ report }) => qualifies(report))
-    .sort(compareLanes);
+     .sort((a, b) => compareLanes(a, b, positiveFamilies));
   const disqualified = latest
     .filter(({ report }) => !qualifies(report))
-    .sort(compareLanes);
+     .sort((a, b) => compareLanes(a, b, positiveFamilies));
   if (qualified.length === 0) {
     throw new Error("no qualified lanes; refusing to publish an empty leaderboard");
   }
@@ -167,11 +168,11 @@ export function renderBenchmarkBlock(
       : "**Ranked lanes.** Bold marks the best value in each column.";
 
   const rows = qualified.map((lane) => {
-    const metrics = displayedMetrics(lane.report);
+    const metrics = displayedMetrics(lane.report, positiveFamilies);
     return {
       lane,
-      balanced: balancedReviewAccuracy(lane.report),
-      ci: scoreConfidenceInterval(lane.report),
+      balanced: balancedReviewAccuracy(lane.report, positiveFamilies),
+      ci: scoreConfidenceInterval(lane.report, positiveFamilies),
       tierOne: tierRecall(lane.report, 1),
       falsePositiveRate: metrics.falsePositiveRate,
       noise: metrics.meanNoisePerPositive,
@@ -193,7 +194,7 @@ export function renderBenchmarkBlock(
   const fpValues = rows.map((row) => row.falsePositiveRate);
   const noiseValues = rows.map((row) => row.noise);
   const meanValues = rows.map((row) => row.meanDurationMs);
-  const ranks = statisticalRanks(qualified);
+  const ranks = statisticalRanks(qualified, positiveFamilies);
   const rankedHeader = zh
     ? "| 名次 | 模型 | 模型 ID | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | 平均 |"
     : "| Rank | Model | Model ID | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |";
@@ -234,7 +235,10 @@ export function renderBenchmarkBlock(
   const selection = zh
     ? "每個模型顯示最近一次可計分的測量。模型 ID 為實測時傳給 Harness 的值。展開公開榜的模型列可查閱先前測量。"
     : "Each model shows its latest scored run. The model ID is the value passed to the harness. Expand a model on the benchmark page to find earlier runs.";
-  const sections = [GENERATED_NOTE, provenance, selection, rankedIntro, rankedTable, unrankedIntro];
+  const formula = zh
+    ? "計分 v2：正例按凍結題族等權，負例等權；正例與負例各佔 50%。Tier-1、反作弊與 positive noise 仍是獨立門檻。"
+    : "Scoring v2: positive fixtures are macro-averaged over the frozen families, negative fixtures remain equally weighted, and both sides count 50%. Tier-1, anti-cheat, and positive noise remain separate gates.";
+  const sections = [GENERATED_NOTE, provenance, formula, selection, rankedIntro, rankedTable, unrankedIntro];
   if (disqualified.length > 0) {
     const unrankedHeader = zh
       ? "| 模型 | 模型 ID | Harness | Effort | Balanced | 完整報告未過的門檻 |"
@@ -245,7 +249,7 @@ export function renderBenchmarkBlock(
         "| --- | --- | --- | --- | ---: | --- |",
         ...disqualified.map(
           ({ config, report }) =>
-            `| [${config.name}](${reportUrl(config.report)}) | \`${report.model}\` | ${harnessLabel(report)} | ${report.effort} | ${(balancedReviewAccuracy(report) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
+            `| [${config.name}](${reportUrl(config.report)}) | \`${report.model}\` | ${harnessLabel(report)} | ${report.effort} | ${(balancedReviewAccuracy(report, positiveFamilies) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
         ),
       ].join("\n"),
     );

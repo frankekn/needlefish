@@ -598,8 +598,10 @@ the curated chronology and confirmation re-runs live in
 The [benchmark page](https://frankekn.github.io/needlefish/) generates
 its leaderboard from the same guarded reports and is never hand-edited.
 
-**Reading the columns:** **Balanced** is the primary score — the arithmetic
-mean of anchored recall and usable specificity. **Tier-1** is recall on
+**Reading the columns:** **Balanced** is the v2 primary score. It averages
+anchored recall across the frozen positive fixture families, then averages that
+with usable specificity across clean fixtures. A fixture without a declared
+family is its own family. **Tier-1** is recall on
 must-find defects and a hard qualification gate. **FP** is clean PRs blocked.
 **Noise/review** is extra findings per positive review (gate at 0.12). Rows
 compare only when prompt, fixture-set, and scorer hashes and the anti-cheat

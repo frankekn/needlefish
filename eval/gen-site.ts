@@ -456,6 +456,13 @@ export function validateManifest(value: unknown): LeaderboardManifest {
   return {
     updated: requiredString(manifest, "updated", "leaderboard manifest"),
     baseline: requiredString(manifest, "baseline", "leaderboard manifest"),
+    ...(typeof manifest.scoreVersion === "string"
+      ? { scoreVersion: manifest.scoreVersion }
+      : {}),
+    ...(manifest.positiveFamilies !== null &&
+    typeof manifest.positiveFamilies === "object"
+      ? { positiveFamilies: manifest.positiveFamilies as Record<string, string> }
+      : {}),
     lanes,
     blocked: manifest.blocked.map((value, index) =>
       blockedConfig(value, `leaderboard manifest.blocked[${index}]`),
@@ -780,7 +787,11 @@ function rawUrl(report: string): string {
   return escapeHtml(`${REPO_URL}/blob/main/eval/${report}`);
 }
 
-function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane[]): string {
+function chart(
+  qualifiedLanes: readonly Lane[],
+  disqualifiedLanes: readonly Lane[],
+  positiveFamilies?: Readonly<Record<string, string>>,
+): string {
   const groups = [
     { label: "Qualified", lanes: qualifiedLanes, gate: false },
     { label: "Below gate · score shown, no rank", lanes: disqualifiedLanes, gate: true },
@@ -828,15 +839,15 @@ function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane
       }
       const barY = ry + (rowH - barH) / 2 - 2;
       const midY = barY + barH / 2;
-      const score = balancedReviewAccuracy(report);
-      const [lower, upper] = scoreConfidenceInterval(report);
+       const score = balancedReviewAccuracy(report, positiveFamilies);
+       const [lower, upper] = scoreConfidenceInterval(report, positiveFamilies);
       const first = !gate && groupIndex === 0 && index === 0;
       const barClass = gate ? "bar bar-gate" : first ? "bar bar-first" : "bar";
       const whiskClass = gate ? "whisk whisk-gate" : "whisk";
       const deployed = config.status === "Deployed" ? `<tspan class="dep">●</tspan> ` : "";
       const half = (((upper - lower) / 2) * 100).toFixed(1);
       const t1 = tierRecall(report, 1);
-      const noise = displayedMetrics(report).meanNoisePerPositive;
+       const noise = displayedMetrics(report, positiveFamilies).meanNoisePerPositive;
       const reasons: string[] = [];
       if (gate) {
         if (!tierOneInterimGate(report).passed) reasons.push(`Tier-1 ${percent(t1)}`);
@@ -861,11 +872,16 @@ function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane
   return `<figure class="plot" aria-labelledby="plot-title"><figcaption id="plot-title">Balanced Review Accuracy by lane</figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Balanced Review Accuracy with 95% confidence intervals for ${total} scored lanes on a 0 to 100 scale. Hollow bars missed a hard gate.">${grid}${parts.join("")}</svg><p>Bars show Balanced Review Accuracy with 95% confidence whiskers on a 0–100 scale. Orange ranks first, the green mark ships in the current release, and hollow bars missed a hard gate but keep their score for comparison, with the failed gate noted beside the effort. The table remains canonical.</p></figure>`;
 }
 
-function laneRows(lanes: readonly Lane[], ranked: boolean, scored: readonly Lane[]): string {
-  const ranks = ranked ? statisticalRanks(lanes) : [];
+function laneRows(
+  lanes: readonly Lane[],
+  ranked: boolean,
+  scored: readonly Lane[],
+  positiveFamilies?: Readonly<Record<string, string>>,
+): string {
+  const ranks = ranked ? statisticalRanks(lanes, positiveFamilies) : [];
   return lanes
     .map(({ config, report }, index) => {
-      const metrics = displayedMetrics(report);
+      const metrics = displayedMetrics(report, positiveFamilies);
       const t1 = tierRecall(report, 1);
       const t2 = tierRecall(report, 2);
       const t3 = tierRecall(report, 3);
@@ -879,7 +895,7 @@ function laneRows(lanes: readonly Lane[], ranked: boolean, scored: readonly Lane
         : noiseMiss
           ? "Below gate: positive noise"
           : config.status;
-      const [lower, upper] = scoreConfidenceInterval(report);
+      const [lower, upper] = scoreConfidenceInterval(report, positiveFamilies);
       const legacyIdentity = config.legacyConfigIdentityException
         ? `<div><dt>Config identity</dt><dd>Legacy exception: ${escapeHtml(config.legacyConfigIdentityException)}</dd></div>`
         : "";
@@ -888,7 +904,7 @@ function laneRows(lanes: readonly Lane[], ranked: boolean, scored: readonly Lane
         : "";
       const diagnostics = [
         ["Recall", percent(metrics.recall)],
-        ["Usable specificity", percent(usableSpecificity(report))],
+        ["Usable specificity", percent(usableSpecificity(report, positiveFamilies))],
         ["Tier-1", percent(t1)],
         ["Tier-2", percent(t2)],
         ["Tier-3", percent(t3)],
@@ -908,15 +924,15 @@ function laneRows(lanes: readonly Lane[], ranked: boolean, scored: readonly Lane
         .join("");
       const priorRuns = scored.filter(lane => lane.config.name === config.name && lane.config.report !== config.report);
       const history = priorRuns.length
-        ? `<h3>Earlier runs</h3><ul>${priorRuns.map(lane => `<li><a href="${rawUrl(lane.config.report)}">${escapeHtml(lane.report.createdAt.slice(0, 10))} · ${escapeHtml(lane.report.model)} · ${escapeHtml(harnessLabel(lane.report))} · ${escapeHtml(lane.report.effort)} · ${percent(balancedReviewAccuracy(lane.report), 2)}</a></li>`).join("")}</ul>`
+        ? `<h3>Earlier runs</h3><ul>${priorRuns.map(lane => `<li><a href="${rawUrl(lane.config.report)}">${escapeHtml(lane.report.createdAt.slice(0, 10))} · ${escapeHtml(lane.report.model)} · ${escapeHtml(harnessLabel(lane.report))} · ${escapeHtml(lane.report.effort)} · ${percent(balancedReviewAccuracy(lane.report, positiveFamilies), 2)}</a></li>`).join("")}</ul>`
         : "";
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)} <code class="effort">${escapeHtml(report.effort)}</code><code class="model-id">${escapeHtml(report.model)}</code></summary></details></th><td>${escapeHtml(harnessLabel(report))}</td><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "gate" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td></tr><tr class="evidence"><td colspan="6"><dl><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div><div><dt>Provider</dt><dd>${escapeHtml(report.provider)} (operator-attested)</dd></div>${legacyIdentity}${legacyAuthIdentity}<div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Reproduce</dt><dd><code>${escapeHtml(report.reproductionCommand)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><p class="metrics">${diagnostics}</p><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a>${history}</td></tr>`;
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)} <code class="effort">${escapeHtml(report.effort)}</code><code class="model-id">${escapeHtml(report.model)}</code></summary></details></th><td>${escapeHtml(harnessLabel(report))}</td><td class="number strong">${percent(balancedReviewAccuracy(report, positiveFamilies), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "gate" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td></tr><tr class="evidence"><td colspan="6"><dl><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div><div><dt>Provider</dt><dd>${escapeHtml(report.provider)} (operator-attested)</dd></div>${legacyIdentity}${legacyAuthIdentity}<div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Reproduce</dt><dd><code>${escapeHtml(report.reproductionCommand)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><p class="metrics">${diagnostics}</p><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a>${history}</td></tr>`;
     })
     .join("");
 }
 
-function laneTable(lanes: readonly Lane[], label: string, ranked: boolean, scored: readonly Lane[]): string {
-  return `<p class="table-hint">Scroll horizontally to see every column.</p><div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th scope="col">Rank<a class="fn" href="#method" aria-label="How ranks are assigned">†</a></th><th scope="col">Model</th><th scope="col">Harness</th><th scope="col" class="number">Balanced score</th><th scope="col" class="number">95% CI</th><th scope="col">Status</th></tr></thead><tbody>${laneRows(lanes, ranked, scored)}</tbody></table></div>`;
+function laneTable(lanes: readonly Lane[], label: string, ranked: boolean, scored: readonly Lane[], positiveFamilies?: Readonly<Record<string, string>>): string {
+  return `<p class="table-hint">Scroll horizontally to see every column.</p><div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th scope="col">Rank<a class="fn" href="#method" aria-label="How ranks are assigned">†</a></th><th scope="col">Model</th><th scope="col">Harness</th><th scope="col" class="number">Balanced score</th><th scope="col" class="number">95% CI</th><th scope="col">Status</th></tr></thead><tbody>${laneRows(lanes, ranked, scored, positiveFamilies)}</tbody></table></div>`;
 }
 
 function blockedRows(blocked: readonly BlockedConfig[]): string {
@@ -947,15 +963,16 @@ export function renderSite(
   validateManifest(manifest);
   const releaseVersion = readPackageVersion();
   const baseline = validateComparability(configured, manifest.baseline, canonical);
+  const positiveFamilies = manifest.positiveFamilies;
   const operational = configured.filter(({ report }) => operationalFailures(report).length > 0);
   const scored = configured.filter(({ report }) => operationalFailures(report).length === 0);
   const latest = latestModelLanes(scored);
   const qualified = latest
     .filter(({ report }) => qualifies(report))
-    .sort(compareLanes);
+    .sort((a, b) => compareLanes(a, b, positiveFamilies));
   const disqualified = latest
     .filter(({ report }) => !qualifies(report))
-    .sort(compareLanes);
+    .sort((a, b) => compareLanes(a, b, positiveFamilies));
   const fixtureCount = baseline.report.fixtures?.length ?? 0;
   const deployment = configured.find(({ config }) => config.status === "Deployed");
   const deploymentLabel = deployment
@@ -1018,11 +1035,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <a class="skip" href="#leaderboard">Skip to leaderboard</a>
 <header class="mast"><div class="shell"><nav aria-label="Primary"><a class="brand" href="${REPO_URL}">Needlefish</a><div class="navlinks"><a href="#leaderboard">Leaderboard</a><a href="#method">Method</a><a href="${REPO_URL}/tree/main/eval/results">Raw reports</a><a href="${REPO_URL}">Use Needlefish</a></div></nav><div class="hero"><div><h1>Which AI reviewer catches real bugs?</h1><p class="lede">Needlefish measures which model and review setup finds real pull-request defects without blocking clean changes. Every lane reviews the same guarded scenarios three times, and every score links to raw evidence.</p></div><div class="dive-log"><strong>${fixtureCount} × 3</strong><span>review scenarios × independent draws</span></div></div><div class="trust" aria-label="Benchmark trust facts"><div><b>${fixtureCount}</b><span>current fixtures</span></div><div><b>3</b><span>draws per lane</span></div><div><b>sealed</b><span>holdouts included</span></div><div><b>v${ANTICHEAT_VERSION}</b><span>anti-cheat generation</span></div></div></div></header>
-<main><section class="section" id="leaderboard" tabindex="-1"><div class="shell"><h2>Current leaderboard</h2><p class="intro">Each model shows its latest scored run. The model ID is the value passed to the harness. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall and positive-fixture noise ≤ 0.12 are hard gates.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? deploymentOperational ? `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} has an operationally invalid report. Release ${escapeHtml(releaseVersion)} is blocked until the lane completes without provider or infrastructure failures.` : qualifies(deployment.report) ? `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} is deployed and passes the current qualification gates.` : `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} is deployed but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}${candidateNote}</p></div>${laneTable(qualified, "Qualified model leaderboard", true, scored)}<p class="legend"><b>Status</b> · <span class="status status-deployed">Deployed</span> ships the current release · <span class="status status-candidate">Candidate</span> passes the same gates but is not shipped · <span class="status status-gate">Below gate</span> missed a hard gate; its score stays visible for comparison. Open a model name for diagnostics, raw reports, and earlier runs.</p>${chart(qualified, disqualified)}</div></section>
-${disqualified.length ? `<section class="section"><div class="shell"><h2>Below the gate</h2><p class="intro">These complete reports missed the Tier-1 or positive-noise gate.</p>${laneTable(disqualified, "Below-gate model lanes", false, scored)}</div></section>` : ""}
+<main><section class="section" id="leaderboard" tabindex="-1"><div class="shell"><h2>Current leaderboard</h2><div class="decision"><strong>Current deployment</strong><p>${deployment ? deploymentOperational ? `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} has an operationally invalid report. Release ${escapeHtml(releaseVersion)} is blocked until the lane completes without provider or infrastructure failures.` : qualifies(deployment.report) ? `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} is deployed and passes the current qualification gates.` : `${deploymentLabel} via ${escapeHtml(deployment.report.provider)} is deployed but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}${candidateNote}</p></div>${laneTable(qualified, "Qualified model leaderboard", true, scored, positiveFamilies)}<p class="legend"><span class="status status-deployed">Deployed</span> <span class="status status-candidate">Candidate</span> <span class="status status-gate">Below gate</span></p>${chart(qualified, disqualified, positiveFamilies)}</div></section>
+${disqualified.length ? `<section class="section"><div class="shell"><h2>Below the gate</h2>${laneTable(disqualified, "Below-gate model lanes", false, scored, positiveFamilies)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${notRanked.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Exploratory, incompatible, compromised, or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(notRanked)}</ul></div></section>` : ""}
-<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Point-sorted uncertainty groups are anchored to their highest-scoring lane; lower lanes share that rank while their paired 95% normal interval versus the anchor includes zero. This avoids non-transitive bridge comparisons. The table also shows each lane's 95% interval. A Tier-1 miss or positive-fixture noise above 0.12 overrides the rank: the lane keeps its score for comparison but leaves the ranked table. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect removes the lane from the ranked table regardless of its average.</p><h3>False positives and noise</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Positive-fixture noise counts unrelated blocking findings on buggy changes; recall bought with noise above the production envelope is not qualified.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Harness, provider, and route labels are operator-attested report metadata, not independently derived by the site generator. Provider failures are operational failures, not proof of model quality. A review that exhausts its per-call deadline is scored as a failed review, because in production the author receives no review.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
+<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>Positive fixtures are averaged within the frozen families, then combined equally with clean-fixture specificity. Invalid output scores as a failed draw. A Tier-1 miss or positive-fixture noise above 0.12 removes a lane from the ranked table. The table shows the paired 95% intervals.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect removes the lane from the ranked table regardless of its average.</p><h3>False positives and noise</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Positive-fixture noise counts unrelated blocking findings on buggy changes.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Harness, provider, and route labels are operator-attested report metadata. Provider failures are operational failures.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
 <footer class="shell"><span>Needlefish — strict local PR review.</span><span><a href="${REPO_URL}">Use Needlefish</a> · <a href="${REPO_URL}/blob/main/LICENSE">MIT License</a></span></footer>
 </body>
 </html>`;
