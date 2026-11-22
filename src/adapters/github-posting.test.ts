@@ -5150,6 +5150,21 @@ test("superseded rounds leave recovery available when the head returns", async (
 	assert.equal(runnerInvocationCount(fixture), 2);
 });
 
+test("a superseded recheck still resets the recovery budget", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 110, rawReview: defaultRawReview() });
+	const round = (id: number, conclusion: string, title: string, recheck: boolean) => ({
+		...receiptRoundCheck(fixture, id, conclusion, title),
+		external_id: JSON.stringify({ v: 2, prNumber: 110, roundId: `round-${id}`, runId: "fixture-run", recheck }),
+	});
+	writeFileSync(fixture.checksState, JSON.stringify([
+		round(3, "cancelled", "Needlefish: superseded", true),
+		round(2, "failure", "Needlefish: review failed", false),
+		round(1, "failure", "Needlefish: review failed", false),
+	]));
+	await runGithub(fixture.repo, 110, { timeoutMs: 1000 });
+	assert.equal(runnerInvocationCount(fixture), 2);
+});
+
 test("a newer same-head pass still covers an older terminated check", async (t) => {
 	const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
 	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha, 2),

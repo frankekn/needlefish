@@ -1791,9 +1791,13 @@ export async function runGithub(
 			const prior = parseCheckRound(check.external_id);
 			// A workflow receipt is not a review attempt, so it spends no recovery budget.
 			if (!prior || prior.prNumber !== prNumber || prior.recheck === undefined) continue;
+			// An explicit recheck is the recovery boundary even when its review was superseded.
+			if (prior.recheck) {
+				priorRounds.push(prior);
+				break;
+			}
 			if (nestedString(check, "output", "title") === "Needlefish: superseded") continue;
 			priorRounds.push(prior);
-			if (prior.recheck) break;
 		}
 		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, previous?.state.headSha === headSha ? 1 : 0);
 		if (recoveryAttempt > 1) throw new RecoveryLimitError();
