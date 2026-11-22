@@ -421,7 +421,7 @@ test("termination on a stale head completes the check as superseded", { timeout:
 	const patches = checkPatches(calls);
 	assert.equal(patches.length, 1);
 	const body = completion(patches[0]);
-	assert.equal(body.conclusion, "neutral");
+	assert.equal(body.conclusion, "cancelled");
 	assert.equal(body.output.title, "Needlefish: superseded");
 	assert.equal(postsToTimeline(calls), false);
 });

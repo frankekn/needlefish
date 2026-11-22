@@ -64,7 +64,8 @@ function runSelection(t, options = {}) {
   const result = spawnSync("bash", ["-c", selectScript], {
     encoding: "utf8", timeout: 5000,
     env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH}`, GITHUB_ENV: githubEnv, GH_LOG: ghLog,
-      REPO: "owner/repo", PR_HEAD_SHA: "b".repeat(40), EXPECTED_NEEDLEFISH_SHA: "must-not-be-used" },
+      REPO: "owner/repo", PR_NUM: "42", GITHUB_RUN_ID: "777", GITHUB_RUN_ATTEMPT: "1",
+      PR_HEAD_SHA: "b".repeat(40), EXPECTED_NEEDLEFISH_SHA: "must-not-be-used" },
   });
   return { ...result, root, release, installs, githubEnv: readFileSync(githubEnv, "utf8"), ghLog: readFileSync(ghLog, "utf8") };
 }

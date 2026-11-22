@@ -422,6 +422,7 @@ interface CheckRound {
 	readonly prNumber: number;
 	readonly roundId: string;
 	readonly runId: string;
+	readonly runAttempt?: string;
 	// Only adapter rounds write it; workflow receipts (author skip, caller retry) omit it.
 	readonly recheck?: boolean;
 }
@@ -1021,7 +1022,7 @@ function postCheck(
 	repo: string,
 	headSha: string,
 	result: ReviewResult | null,
-	conclusion: "success" | "failure" | "neutral",
+	conclusion: "success" | "failure" | "neutral" | "cancelled",
 	title: string,
 	summary: string,
 	checkId?: number | null,
@@ -1034,7 +1035,7 @@ function checkCompletion(
 	repo: string,
 	headSha: string,
 	result: ReviewResult | null,
-	conclusion: "success" | "failure" | "neutral",
+	conclusion: "success" | "failure" | "neutral" | "cancelled",
 	title: string,
 	summary: string,
 	checkId?: number | null,
@@ -1583,7 +1584,7 @@ function readReviews(repo: string, prNumber: number): JsonRecord[] {
 // A job timeout or watchdog terminates the process while the owned check is
 // in_progress, and a consumer workflow has nothing else that completes it.
 // Runs inside the termination grace, off the event loop. Same stale-head rule
-// as the error path: a moved head or closed PR gets a neutral superseded
+// as the error path: a moved head or closed PR gets a cancelled superseded
 // completion and nothing on the timeline. A current head gets a failure that
 // names the termination, not a code defect, and no timeline comment either,
 // since nothing was reviewed.
@@ -1611,7 +1612,7 @@ async function completeTerminatedCheck(
 					repo,
 					headSha,
 					null,
-					"neutral",
+					"cancelled",
 					"Needlefish: superseded",
 					`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
 					checkId,
@@ -1747,7 +1748,11 @@ export async function runGithub(
 	} catch (error) {
 		if (!docsOnlyHead(repoPath, process.env.PR_BASE_SHA || nestedString(pr, "base", "sha"), headSha)) throw error;
 	}
-	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
+	const runAttempt = process.env.GITHUB_RUN_ATTEMPT;
+	const round: CheckRound = {
+		v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck,
+		...(/^[1-9][0-9]*$/.test(runAttempt ?? "") ? { runAttempt } : {}),
+	};
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
 	// The owned check reaches a terminal state exactly once, and whoever holds
@@ -1786,6 +1791,7 @@ export async function runGithub(
 			const prior = parseCheckRound(check.external_id);
 			// A workflow receipt is not a review attempt, so it spends no recovery budget.
 			if (!prior || prior.prNumber !== prNumber || prior.recheck === undefined) continue;
+			if (nestedString(check, "output", "title") === "Needlefish: superseded") continue;
 			priorRounds.push(prior);
 			if (prior.recheck) break;
 		}
@@ -1851,7 +1857,7 @@ export async function runGithub(
 				repo,
 				headSha,
 				result,
-				"neutral",
+				"cancelled",
 				"Needlefish: superseded",
 				`A newer head was pushed while this review ran; its result is not posted. reason=${skipReason}`,
 				pendingCheckId,
@@ -2041,7 +2047,7 @@ export async function runGithub(
 					repo,
 					headSha,
 					null,
-					"neutral",
+					"cancelled",
 					"Needlefish: superseded",
 					`The review errored and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
 					pendingCheckId,
