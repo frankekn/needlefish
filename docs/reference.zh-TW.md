@@ -83,8 +83,9 @@ Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在�
 check 不會讓舊收據阻止恢復審查。same-head 跳過時沿用已完成 verdict 的
 exit status。舊版 neutral `needs_human` check 在同一 head 再次觸發時會
 完整重新審查。升級後請手動重跑帶有舊版 neutral `needs_human` check 的
-開啟中 PR。既有 check 不會自動更新，neutral check 仍可能滿足 branch
-protection。
+開啟中 PR。reconcile 執行該 head 時，會將這些 check 改為 `cancelled`，
+作者信任政策的 skip 除外，因此它們不再滿足 branch protection。其他開啟中
+PR 在升級後仍需手動重跑。
 
 產生 verdict 的審查指令只有 `pass` 會 exit 0；`changes_requested`、
 `needs_human` 與執行失敗都 exit 1，`--json` 輸出也一樣。GitHub 模式下
