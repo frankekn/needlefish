@@ -138,8 +138,10 @@ Receipts are written after delivery. Missing checks, infrastructure failures,
 terminations, and superseded checks do not let old receipts suppress recovery. A same-head skip keeps the
 completed verdict's exit status. Legacy neutral `needs_human` checks trigger a
 full re-review when that head is triggered again. After upgrading, manually
-re-run open PRs with legacy neutral `needs_human` checks. Existing checks are
-not updated automatically, and neutral checks can still satisfy branch protection.
+re-run open PRs with legacy neutral `needs_human` checks. Reconciliation updates
+legacy neutral checks to `cancelled` for that head when it runs, except for
+author-trust skips, so they no longer satisfy branch protection. Other open PRs
+still need a manual re-run after upgrading.
 
 Review commands that produce a verdict exit 0 only for `pass`.
 `changes_requested`, `needs_human`, and execution failures exit 1, including

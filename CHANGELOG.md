@@ -11,8 +11,9 @@
   Local, PR, JSON, and cached commands exit 1 for non-pass verdicts. Upgrade
   scripts that previously accepted incomplete reviews. Verdict rules and
   superseded checks are unchanged. After upgrading, manually re-run open PRs
-  with legacy neutral `needs_human` checks. Existing checks are not updated
-  automatically (#145, Class R).
+  with legacy neutral `needs_human` checks. Reconciliation cancels legacy
+  neutral checks on the active head when that workflow runs, except for
+  author-trust skips (#145, Class R).
 
 - Doctor: hard-stop runner status probes at their 10-second timeout and
   clean up their remaining POSIX process group. Interrupted diagnostics use
