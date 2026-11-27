@@ -3,6 +3,18 @@ import type { DrawResult, Expected, FixtureKind, Report } from "./types";
 export const REPO_URL = "https://github.com/frankekn/needlefish";
 export const MAX_MEAN_NOISE_PER_POSITIVE = 0.12;
 
+export function publicLabel<T extends string | null>(value: T): T {
+  if (value === null) return value;
+  return value
+    .replace(/(\bPI_PROVIDER=)magpie\b(?!-)/gi, "$1gateway")
+    .replace(/\bcliproxyapi\//gi, "")
+    .replace(/\bzai-cliproxy\b/gi, "zai")
+    .replace(/\b(?:cliproxy|magpie)-/gi, "")
+    .replace(/\bvia (?:cliproxyapi|magpie)\b/gi, "via private gateway")
+    .replace(/\b(?:cliproxyapi|magpie)\b/gi, "private gateway")
+    .replace(/cliproxy|magpie/gi, "private gateway") as T;
+}
+
 export interface LaneConfig {
   readonly report: string;
   readonly name: string;

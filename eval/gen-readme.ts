@@ -19,6 +19,7 @@ import {
   harnessLabel,
   latestModelLanes,
   operationalFailures,
+  publicLabel,
   scoreConfidenceInterval,
   statisticalRanks,
   tierOneInterimGate,
@@ -161,8 +162,8 @@ export function renderBenchmarkBlock(
 
   const rankedIntro = deployment
     ? zh
-      ? `**排名 lane。** **目前部署 lane：${deployment.config.name}（\`${deployment.report.model}\` @ \`${deployment.report.effort}\`）**——leaderboard 記錄的部署 lane；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示目前部署的 lane 與每欄最佳值。`
-      : `**Ranked lanes.** **Deployed lane: ${deployment.config.name} (\`${deployment.report.model}\` at \`${deployment.report.effort}\` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.`
+      ? `**排名 lane。** **目前部署 lane：${deployment.config.name}（\`${publicLabel(deployment.report.model)}\` @ \`${deployment.report.effort}\`）**——leaderboard 記錄的部署 lane；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示目前部署的 lane 與每欄最佳值。`
+      : `**Ranked lanes.** **Deployed lane: ${deployment.config.name} (\`${publicLabel(deployment.report.model)}\` at \`${deployment.report.effort}\` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.`
     : zh
       ? "**排名 lane。** 粗體標示每欄最佳值。"
       : "**Ranked lanes.** Bold marks the best value in each column.";
@@ -214,8 +215,8 @@ export function renderBenchmarkBlock(
       const cells = [
         String(ranks[index]),
         laneCell,
-        `\`${report.model}\``,
-        harnessLabel(report),
+        `\`${publicLabel(report.model)}\``,
+        publicLabel(harnessLabel(report)),
         report.effort,
         bold(`${(row.balanced * 100).toFixed(2)}%`, balancedValues, row.balanced, "max"),
         `${(lower * 100).toFixed(1)}%–${(upper * 100).toFixed(1)}%`,
@@ -249,7 +250,7 @@ export function renderBenchmarkBlock(
         "| --- | --- | --- | --- | ---: | --- |",
         ...disqualified.map(
           ({ config, report }) =>
-            `| [${config.name}](${reportUrl(config.report)}) | \`${report.model}\` | ${harnessLabel(report)} | ${report.effort} | ${(balancedReviewAccuracy(report, positiveFamilies) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
+            `| [${config.name}](${reportUrl(config.report)}) | \`${publicLabel(report.model)}\` | ${publicLabel(harnessLabel(report))} | ${report.effort} | ${(balancedReviewAccuracy(report, positiveFamilies) * 100).toFixed(2)}% | ${gateMissedSummary(report)} |`,
         ),
       ].join("\n"),
     );
