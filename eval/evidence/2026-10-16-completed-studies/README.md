@@ -5,7 +5,7 @@ This archive publishes completed observations for issue #84 and PR #255. It chan
 | Study | Frozen source | Recorded outcome | Limit |
 | --- | --- | --- | --- |
 | Issue #84 T0 | `a134550590251ee957543057a24b53e104e30199` | `COMPLETED_INVALID_WINDOW_DESCRIPTIVE_ONLY` | A repaired raw schema error invalidates the preregistered window. No formal Class R certification or valid T0/T1 comparison. |
-| PR #255 native offline D | `6032f98fc95ff62764725a3ac90c5281d68ca5ba` | `OFFLINE_D_PASS` | Native OpenAI/ChatGPT offline evidence only. No CLIProxyAPI or live-canary certification. |
+| PR #255 native offline D | `6032f98fc95ff62764725a3ac90c5281d68ca5ba` | `OFFLINE_D_PASS` | Native OpenAI/ChatGPT offline evidence only. No private gateway or live-canary certification. |
 
 Both studies used Codex 0.163.0, `gpt-5.6-terra`, high effort, Node v24.15.0, and macOS arm64. They used different capture wrappers. The remote backend revision was unavailable. Model aliases do not pin weights.
 

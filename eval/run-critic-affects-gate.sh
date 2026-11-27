@@ -11,14 +11,15 @@ REPORT="eval/results/$STAMP-codex-deepseek-v41-flash-high-critic-r1-full-x3.json
 LOG="eval/results/run-critic-r1-full-gate-$STAMP.log"
 : >> "$LOG"
 
-export CODEX_PROXY_BASE_URL="http://100.104.118.1:8317/v1"
-export CODEX_PROXY_API_KEY=$(cat "$HOME/.cli-proxy-api/secrets/client-primary.key")
+: "${CODEX_PROXY_BASE_URL:?set CODEX_PROXY_BASE_URL to the private gateway URL}"
+export CODEX_PROXY_BASE_URL
+export CODEX_PROXY_API_KEY=$(cat "${CODEX_PROXY_KEY_FILE:?set CODEX_PROXY_KEY_FILE}")
 
 echo "=== $(date -u +%FT%TZ) START deepseek-v4.1-flash high x3 (codex) ===" | tee -a "$LOG"
 if node --import tsx eval/run.ts \
   --runner codex --model deepseek/deepseek-v4.1-flash --effort high \
   --provider 'DeepSeek' \
-  --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' \
+  --route 'codex over private gateway (DGX Spark, Tailscale)' \
   --runner-version 'codex-cli 0.159.1' \
   --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 \
   --draws 3 --concurrency 3 --holdout include --gate-class R \
