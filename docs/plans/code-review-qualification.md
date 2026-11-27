@@ -21,9 +21,9 @@ This checks the launcher only; it does not start a review. Record the DSH
 package version and selected profile in every campaign report.
 
 Local authentication uses DSH's `$DSH_HOME/.credentials.yaml` credential
-reference (`CLIPROXY_API_KEY`) together with the `llm-pi-ai` `cliproxy` route in
-`$DSH_HOME/settings.yaml` (`baseURL: http://100.104.118.1:8317/v1`). The key is
-reused from the existing local CLIProxyAPI setup; it is never copied into this
+reference (`PRIVATE_GATEWAY_API_KEY`) together with the `llm-pi-ai` `gateway` route in
+`$DSH_HOME/settings.yaml` (`baseURL: <private gateway URL>`). The key is
+reused from the existing local private gateway setup; it is never copied into this
 repository. The exact model is
 `deepseek-v4.1-flash-expires-on-0910`.
 
@@ -50,7 +50,7 @@ and mapped to the underlying `thinking` and effort parameters before comparison.
 ## Planned lane matrix
 
 - GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
-- `deepseek-v4.1-flash-expires-on-0910`: DSH `headless`, `high`, through the managed CLIProxyAPI route.
+- `deepseek-v4.1-flash-expires-on-0910`: DSH `headless`, `high`, through the managed private gateway route.
 - GLM-5.3-Flash: currently blocked because the Z.AI provider quota is exhausted. Do not run a partial or reduced campaign for this lane; revisit it only after quota availability is confirmed.
 
 The machine-readable source for this matrix is `eval/campaigns/code-review-v1.json`. Historical leaderboard entries remain unchanged until a complete, comparable report exists.

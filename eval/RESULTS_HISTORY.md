@@ -507,7 +507,7 @@ Findings:
 ## 2026-07-09/10 — pi harness campaign (two-axis matrix)
 
 All lanes: pi CLI (`-p --no-session --mode text`) via CLAUDE_BIN shim, models
-served through CLIProxyAPI :8317 (glm via z.ai direct), effort xhigh, x3 draws,
+served through the private gateway (glm via z.ai direct), effort xhigh, x3 draws,
 59-fixture set (fsHash a05be8e65af27296), compared vs codex-strict baseline.
 omp lane dropped ("omp 不跑了"); fable-5 registered but excluded ("fable 不用跑").
 Total wall-clock 22:24 → 00:41 (~2h16m, glm parallel + sonnet→gpt chain).
@@ -683,7 +683,7 @@ Result: candidate-present 3/9 (threshold met), criticPruneError 2 (draws 3 and 7
 
 Standing conclusions: (1) the exception TEXT is insufficient on real diffs — the critic prunes the class about half the time regardless; before any further wording round, capture the critic's input/output on pruned draws to see whether the candidate fails the exception's own verify clause or the prune fires under a different rule; (2) the bundle-basesha lane has now consumed rounds 3, 4, 6, 7 with no shippable artifact — campaign paused; the highest-value next work is structural: per-mustFind partial-recall accounting in the eval harness (round-5 conclusion), which would make any future round on multi-defect fixtures measurable.
 
-## 2026-07-12 — challenger lanes x1: grok-4.5 @ xhigh (grok runner), opus-4.8 @ xhigh (pi/cliproxy) — full set, 84 fixtures, holdout include
+## 2026-07-12 — challenger lanes x1: grok-4.5 @ xhigh (grok runner), opus-4.8 @ xhigh (Pi/private gateway) — full set, 84 fixtures, holdout include
 
 Both vs sol-medium baseline (recall 93.1% / FP 12.5%). Single draw each; promptHash e62d0889fc704541.
 
@@ -696,9 +696,9 @@ Both vs sol-medium baseline (recall 93.1% / FP 12.5%). Single draw each; promptH
 | lineAnchorValidRate | 89.3% | 88.1% |
 | meanDurationMs | 52s | 53s |
 
-Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=cliproxy for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
+Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=<private gateway provider> for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
 
-## 2026-07-12 — challenger lanes x3 confirm: grok-4.5 @ xhigh, opus-4.8 @ xhigh (pi/cliproxy) — full set, 84 fixtures, 252 draws each, holdout include
+## 2026-07-12 — challenger lanes x3 confirm: grok-4.5 @ xhigh, opus-4.8 @ xhigh (Pi/private gateway) — full set, 84 fixtures, 252 draws each, holdout include
 
 x3 confirms the x1 headline: **both challengers hold 0% FP across all 108 negative draws** (sol baseline 12.5%). x3 also inverts the x1 recall order (opus 89.7 > grok 86.2 at x1; grok 88.5 > opus 86.2 at x3) — single-draw ranking is noise, as suspected.
 

@@ -33,7 +33,7 @@ New sealed holdout, authored before any run: `holdout-descriptive-rename`
 
 ## Gate (pre-declared)
 
-Lane: codex, `deepseek/deepseek-v4.1-flash`, effort high, CLIProxyAPI route,
+Lane: codex, `deepseek/deepseek-v4.1-flash`, effort high, private gateway route,
 full fixture set, x3, holdouts included, `--gate-class R`.
 
 Pass requires all of:
@@ -113,7 +113,7 @@ control (`d95aa170f3a37cf3`) on contract drift once per-draw flicker is
 averaged out, without a real false-positive cost?
 
 Both arms run from the same commit in separate worktrees; only
-`prompts/critic.md` differs. Same lane (codex → CLIProxyAPI →
+`prompts/critic.md` differs. Same lane (codex → private gateway →
 `deepseek/deepseek-v4.1-flash`, high), 10 draws, holdouts included, both arms
 concurrently at concurrency 3.
 

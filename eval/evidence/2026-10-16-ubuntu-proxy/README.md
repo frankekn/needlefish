@@ -8,7 +8,7 @@ PR #258 passed one isolated Linux installation canary. PR #255 did not pass its 
 | PR #255 installation canary | `6032f98fc95ff62764725a3ac90c5281d68ca5ba` | `FAILED_HOST_CAPACITY_BEFORE_FIRST_MODEL`. Zero reviews in protocol v3. Automatic rollback completed about 1.1 seconds after failure. |
 | PR #255 offline study, Class D | `6032f98fc95ff62764725a3ac90c5281d68ca5ba` | `INVALID_OFFLINE_D_GATE`. Nine completed draws, 19 native calls, one intermediate critic contract error. The observer paused the eval parent for 40.37170600891113 seconds. |
 
-These studies used Ubuntu Node 26.8.2, Codex 0.163.0, the existing CLIProxyAPI route, and `gpt-5.6-terra/high`. The proxy service version is unknown. The authenticated model-list endpoint exposed no version or build. This publication omits the private endpoint and credential configuration pointers. It neither reads credentials nor reruns any experiment.
+These studies used Ubuntu Node 26.8.2, Codex 0.163.0, the existing private gateway route, and `gpt-5.6-terra/high`. The proxy service version is unknown. The authenticated model-list endpoint exposed no version or build. This publication omits the private endpoint and credential configuration pointers. It neither reads credentials nor reruns any experiment.
 
 ## Installation canary
 

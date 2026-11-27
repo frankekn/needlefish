@@ -15,7 +15,7 @@ anti-cheat, and positive-noise rules remain separate gates.
 
 ## 2026-11-21 — GPT and Claude on the public benchmark
 
-All lanes used Pi 1.6.0. GPT used Magpie and Claude used CLIProxyAPI.
+All lanes used Pi 1.6.0. GPT and Claude each went through a private gateway.
 Each lane completed 261 draws. The initial Tier 1 stage was checkpointed and
 resumed, preserving all 21 valid draws per lane in the final reports. Both GPT
 lanes exceeded the 0.12 positive-fixture noise gate. All four reports recorded
@@ -36,7 +36,7 @@ has trace diagnostics for all 255 model-reviewed draws and six docs fast paths.
 
 ## 2026-11-21 — DeepSeek V4.1 Flash high rerun
 
-Pi 1.6.0 via CLIProxyAPI used the current `deepseek-v4.1-flash` model ID at
+Pi 1.6.0 via the private gateway used the current `deepseek-v4.1-flash` model ID at
 `high` effort. The prior public result used the dated model alias and Pi 0.85.1.
 This is a separate candidate lane. The run recorded 0
 raw bait exposures and zero structured detections across all 261 draws.
@@ -56,26 +56,26 @@ All 87 fixtures ran three times, including sealed holdouts. Prompt
 `8bbc6152d8b45a43`, anti-cheat v2. Each report
 has trace diagnostics for all 255 model-reviewed draws and six docs fast paths.
 
-## 2026-11-21 — Magpie GPT and Claude on the 84-fixture benchmark
+## 2026-11-21 — GPT and Claude on the 84-fixture benchmark
 
 **退役版本。** 此輪使用 Needlefish 0.4.1 的 84 案例套件。新模型的公開榜
 評測依 [公開評測預檢](../docs/reference.md#public-benchmark-preflight) 選擇套件。
 
 每組 x1 跑完整 84 項。Opus、Sonnet 與 GPT-5.6 Terra 在同一時段各自重跑
 全部 252 次。所有輪次含保留測例，每組 concurrency 2。GPT-6.2 Sol 與
-GPT-6.1 Terra 經 Pi / Magpie，Claude 經 Pi / CLIProxyAPI，Pi 版本 1.6.0。
+GPT-6.1 Terra 經 Pi / private gateway，Claude 經 Pi / private gateway，Pi 版本 1.6.0。
 同期 GPT-5.6 Terra high 基準使用 Codex CLI 與本機登入。
 
 ### 第一輪 x1
 
 | 模型 | Runner / 路由 | 召回率 | Tier 1 | Tier 2 | Tier 3 | 誤報 | 無效 | 判定正確率 | Positive noise | 秒／案 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| [GPT-6.2 Sol medium](results/2026-11-21-gpt-6.2-sol-medium-x1.json) | Pi / Magpie | 89.7% | 7/7 | 94.1% | 76.5% | 4/24 | 0/84 | 92.9% | 0.190 | 40.5 |
-| [GPT-6.1 Terra high](results/2026-11-21-gpt-6.1-terra-high-x1.json) | Pi / Magpie | 89.7% | 7/7 | 97.1% | 70.6% | 4/24 | 0/84 | 91.7% | 0.224 | 30.6 |
-| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x1.json) | Pi / CLIProxyAPI | 93.1% | 7/7 | 97.1% | 82.4% | 0/24 | 1/84 | 95.2% | 0.069 | 28.3 |
-| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x1.json) | Pi / CLIProxyAPI | 91.4% | 7/7 | 97.1% | 76.5% | 1/24 | 2/84 | 91.7% | 0.017 | 20.6 |
+| [GPT-6.2 Sol medium](results/2026-11-21-gpt-6.2-sol-medium-x1.json) | Pi / private gateway | 89.7% | 7/7 | 94.1% | 76.5% | 4/24 | 0/84 | 92.9% | 0.190 | 40.5 |
+| [GPT-6.1 Terra high](results/2026-11-21-gpt-6.1-terra-high-x1.json) | Pi / private gateway | 89.7% | 7/7 | 97.1% | 70.6% | 4/24 | 0/84 | 91.7% | 0.224 | 30.6 |
+| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x1.json) | Pi / private gateway | 93.1% | 7/7 | 97.1% | 82.4% | 0/24 | 1/84 | 95.2% | 0.069 | 28.3 |
+| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x1.json) | Pi / private gateway | 91.4% | 7/7 | 97.1% | 76.5% | 1/24 | 2/84 | 91.7% | 0.017 | 20.6 |
 
-兩組 Magpie GPT 各有四個乾淨案例誤報，因此本輪停在 x1。Claude 的 x1
+兩組 GPT 各有四個乾淨案例誤報，因此本輪停在 x1。Claude 的 x1
 無效輸出均由驗證器拒絕低信心的阻擋級 finding。
 
 ### 同期 x3
@@ -83,8 +83,8 @@ GPT-6.1 Terra 經 Pi / Magpie，Claude 經 Pi / CLIProxyAPI，Pi 版本 1.6.0。
 | 模型 | Runner / 路由 | 召回率 | Tier 1 | Tier 2 | Tier 3 | 誤報 | 無效 | 判定正確率 | Positive noise | 秒／案 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | [GPT-5.6 Terra high](results/2026-11-21-gpt-5.6-terra-high-x3.json) | Codex CLI | 92.5% | 21/21 | 98.0% | 78.4% | 6/72 | 1/252 | 96.0% | 0.069 | 105.1 |
-| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x3.json) | Pi / CLIProxyAPI | 94.8% | 21/21 | 99.0% | 84.3% | 0/72 | 0/252 | 96.8% | 0.057 | 28.1 |
-| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x3.json) | Pi / CLIProxyAPI | 92.5% | 20/21 | 99.0% | 78.4% | 0/72 | 0/252 | 95.2% | 0.017 | 20.6 |
+| [Claude Opus 5.5 medium](results/2026-11-21-claude-opus-5.5-medium-x3.json) | Pi / private gateway | 94.8% | 21/21 | 99.0% | 84.3% | 0/72 | 0/252 | 96.8% | 0.057 | 28.1 |
+| [Claude Sonnet 5.5 high](results/2026-11-21-claude-sonnet-5.5-high-x3.json) | Pi / private gateway | 92.5% | 20/21 | 99.0% | 78.4% | 0/72 | 0/252 | 95.2% | 0.017 | 20.6 |
 
 Opus 命中全部 21 個 Tier 1 draws，誤報與無效輸出均為零。其召回率與同期
 Terra 相差 2.3 個百分點。Sonnet 最快，但在 `real-pr1-self-review-tool-checkout`
@@ -542,7 +542,7 @@ attributes mark binary is listed as skipped. No eval fixture runs uncommitted
 mode. Classified **R** because the patch fed to the model changes for
 repositories with `-diff`, `binary`, or textconv attributes.
 
-Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flash`,
+Lane: owner-approved **substitute** lane, opencode `CF-Qwen-3.8-flash`,
 **high**. This is not the production lane (Codex `gpt-5.6-terra` high).
 The [owner waiver](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5499966324)
 accepts this substitute lane plus input identity for PR #234. The owner
@@ -598,7 +598,7 @@ Prompts, normalization, critic matching, and scoring remain unchanged. Classifie
 **R** because repo-root resolution and usable refs alter available review evidence.
 
 Historical branch gate: Codex **0.160.1**, `deepseek/deepseek-v4.1-flash`,
-**high**, DeepSeek through CLIProxyAPI on DGX Spark/Tailscale; **91 fixtures ×3**,
+**high**, DeepSeek through the private gateway on DGX Spark/Tailscale; **91 fixtures ×3**,
 17 holdouts included. Tier-1 **21/21**, recall **0.9086**, Tier-2 **0.9459**,
 Tier-3 **0.7963**, FP **0/84**, noise **0.0376**, invalid **0**, cheat **0**;
 102 raw bait exposures with no structured adoption. The 261-draw main checkpoint
@@ -693,7 +693,7 @@ against HEAD, byte-identical body never clears it) and sealed a new negative
 holdout, `holdout-descriptive-rename`. Criteria were declared before the run
 in `docs/plans/critic-contract-drift-affects.md`.
 
-Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high, x3, holdouts
+Codex → private gateway → `deepseek/deepseek-v4.1-flash`, high, x3, holdouts
 included. Control prompt `d95aa170f3a37cf3` (88 fixtures); candidate
 `c59d803f0d0dc476` (89 fixtures, the added holdout). Both reports have
 `cheatDetectedCount: 0` and invalid output 0.
@@ -846,7 +846,7 @@ applied to the merged candidate findings), the critic's change to FP rate,
 noise and recall, and the critic's share of pass time. The scorer hash is
 unchanged (`8bbc6152d8b45a43`), so older reports still compare.
 
-First measurement, Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high,
+First measurement, Codex → private gateway → `deepseek/deepseek-v4.1-flash`, high,
 90 fixtures × 1 draw: the critic took the false-positive rate from 8.3% to 0
 (two clean fixtures that would have been blocked), left noise unchanged
 (0.016), cost one true positive (recall −1.6%, `rs-backend-spec-drift`), and
@@ -861,7 +861,7 @@ Report: `eval/evidence/2026-09-28-critic-value/critic-value-90-x1.json`.
 
 No fixture exercised the large path (map → deep hotspots → tail coverage →
 critic) before #185: every draw in recent full-set reports made two calls. The
-measurements below are observations, not a gate. All use Codex → CLIProxyAPI →
+measurements below are observations, not a gate. All use Codex → private gateway →
 `deepseek/deepseek-v4.1-flash`, high, prompt `d95aa170f3a37cf3`.
 
 | Run | Result |
@@ -895,7 +895,7 @@ which the pipeline turns into a blocking residual (more conservative).
 
 Gate, declared before any draw: the resident suite including the provenance
 properties passes; then `real-pr4-options-not-forwarded`, `t3-cache-key-tenant`
-and all honeypots x3 through Codex → CLIProxyAPI →
+and all honeypots x3 through Codex → private gateway →
 `deepseek/deepseek-v4.1-flash` high, the production lane. Pass requires 9/9
 valid draws, both positives recalled 3/3, zero malformed-output errors
 (`invalidJsonRate` 0), zero cheat detections, and positive noise no higher than
@@ -923,7 +923,7 @@ counts unchanged. The failed production finding itself was not retained by the
 ephemeral runner or proxy; this is a verified contract mismatch, not a claim
 to have recovered its exact text.
 
-Predeclared `gateClass: R`; Codex → CLIProxyAPI →
+Predeclared `gateClass: R`; Codex → private gateway →
 `deepseek/deepseek-v4.1-flash`, high, all 88 fixtures including a new sealed
 holdout. Control and candidate fixture hash `b1e75143e8e71a27`, anticheat v2.
 Control prompt `e62d0889fc704541`; candidate `d95aa170f3a37cf3`. These are
@@ -958,7 +958,7 @@ change alters the Class R model path or invalidates its retained draws.
 
 Self.6 live run `36258643489`, check `108450740558`, passed on exact target head:
 54/54 files, six hotspots, eight calls, 26m38s, no actionable findings or reported
-output retries. The actual lane remained Codex → CLIProxyAPI → DeepSeek V4.1
+output retries. The actual lane remained Codex → private gateway → DeepSeek V4.1
 Flash/high. AMI 1.0.20 (`ami-0e40720e51ec5004a`) remains promoted. This is a
 target-workflow gate, not a rerank of the frozen benchmark above. Bounded
 receipt: `eval/evidence/2026-09-26-confidence/live-canary.json`.
@@ -983,7 +983,7 @@ GitHub identity cannot update the Actions-owned check (HTTP 403, App required).
 
 After explicit deployment authorization, the historical drift fixtures
 `real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots ran
-x3 through Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash` high. All nine
+x3 through Codex → private gateway → `deepseek/deepseek-v4.1-flash` high. All nine
 draws succeeded: recall 1, invalidJsonRate 0, cheatDetectedCount 0,
 baitExposureCount 3 (exposure only), meanNoisePerPositive 0.
 
@@ -1035,7 +1035,7 @@ retains only the evidence. No deploy, live canary, test-repository
 branch-protection exercise, or nontechnical-user acceptance occurred.
 Issue #145 remains unresolved.
 
-### 2026-09-03 — Codex CLIProxyAPI delivery gate
+### 2026-09-03 — Codex private gateway delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
 custom-provider routing for self-hosted reviews. This is Class D: the review
@@ -1045,14 +1045,14 @@ the Codex transport before a review starts.
 The resident Class D provenance suite passed 14/14. The x86_64 live gate then
 ran the historical drift fixtures `real-pr4-options-not-forwarded` and
 `t3-cache-key-tenant` plus the `honeypot-clean-rename` canary at x3 through
-Codex CLI 0.153.0, `gpt-5.6-terra` xhigh, and the private CLIProxyAPI route.
+Codex CLI 0.153.0, `gpt-5.6-terra` xhigh, and the private gateway route.
 All 9/9 draws were valid; both positives recalled 3/3; verdict and anchor
 validity were 100%; positive noise, malformed output, and structured cheat
 detections were zero. Two raw-transcript bait exposures were recorded without
 structured adoption or escape, so the report remains valid under the v2
 anti-cheat contract. The report attests required proxy mode and the presence of
 both proxy settings without persisting their values. Report:
-[`results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json`](results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json).
+[raw report](results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json).
 
 The final-candidate deployment first exposed a stale user-local wrapper that
 could not locate its real Codex binary inside the ephemeral HOME. The fleet
@@ -1071,24 +1071,24 @@ Commit `6b54c9f` makes proxy and explicit provider API-key routes stage only
 require `auth.json`. Focused ephemeral-HOME tests pass.
 
 A preliminary Class D smoke reviewed sealed holdout `holdout-error-swallow` through Pi
-0.84.4, `cliproxy`, and `gpt-5.5` at max effort. It produced one valid draw in
+0.84.4, `gateway`, and `gpt-5.5` at max effort. It produced one valid draw in
 62.5s with recall, verdict match, and anchor validity all 100%; invalid output,
 bait exposure, and cheat detection were all zero. Report:
-[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
+[raw report](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
 
 The resident Class D provenance suite passed 14/14. The offline model-fixture phase
 then ran the historical drift fixtures
 `real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots
-(`honeypot-clean-rename`) at x3 through the then-current Pi/cliproxy path. All
+(`honeypot-clean-rename`) at x3 through the then-current Pi/private gateway path. All
 9/9 draws were valid; both positives recalled 3/3; invalid output, bait
 exposure, and cheat detection were zero. Report:
-[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
+[raw report](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
 
 The final follow-up removes provider-name inference and supports explicit
 `PI_AUTH_MODE=proxy|oauth` for Pi routes. Supplied modes are authoritative;
 the built-in provider defaults to OAuth while existing non-default routes keep
 their proxy default. A fresh sealed-honeypot smoke through
-`cliproxy` in explicit proxy mode was valid with verdict/anchor 100% and zero
+`gateway` in explicit proxy mode was valid with verdict/anchor 100% and zero
 invalid output, bait exposure, or cheat detection. The offline Class D fixture phase
 then repeated the same two historical drift fixtures plus the honeypot at x3:
 9/9 valid, both positives recalled 3/3, verdict/anchor 100%, and zero invalid
@@ -2216,9 +2216,9 @@ commit `a5a0c68` (main after #111) with the same invocation shape as their
 `NEEDLEFISH_EPHEMERAL_HOME=1`, `NEEDLEFISH_EVAL_TRACE=1`. Terra xhigh carried
 `--baseline`. Codex lanes ran at concurrency 4, Grok and Pi at 3. Route
 changes since August: GLM ran through Pi's direct Z.AI endpoint
-(`zai-direct/glm-5.3-flash`) because the CLIProxyAPI GLM route rejected Pi's
-role layout ("Incorrect role information"); DeepSeek ran through CLIProxyAPI
-(`cliproxy-deepseek/...`) instead of the direct DeepSeek API. Both are
+(`zai-direct/glm-5.3-flash`) because the private gateway GLM route rejected Pi's
+role layout ("Incorrect role information"); DeepSeek ran through the private gateway
+(`deepseek/...`) instead of the direct DeepSeek API. Both are
 attested in the reports. Codex CLI moved from 0.151.0 to 0.153.4, Pi from
 0.84.4 to 0.85.1, Grok CLI from 1.0.5 to 1.0.13.
 
@@ -2249,7 +2249,7 @@ Flicker confirmation (same commit and lane, x3 on the missed fixture):
 - GLM: `real-pr1-self-review-tool-checkout` 3/3
   ([`results/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json`](results/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json)).
 - DeepSeek: `real-pr1-codex-no-sandbox-flag` 3/3
-  ([`results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json`](results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json)).
+  ([raw report](results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json)).
 - Luna: not confirmed. `t1-inverted-guard` is 0/3 in the full report, which
   the flicker rule does not cover; the lane is disqualified on its own
   evidence.
@@ -2385,11 +2385,11 @@ contained a deadline timeout.
 [Immutable archive and portable verifier](evidence/2026-10-16-completed-studies/README.md) preserve 60 issue #84 singleton reports and the current-source PR #255 native report. This publication changes no model inputs, output acceptance, scorer, or pipeline; it requires no new model gate.
 
 - **Issue #84, Class R diagnostic subset only.** Source `a134550590251ee957543057a24b53e104e30199`. Target 0/15 blocking draws, refactor 7/15, timing 1/15, honeypot 0/15. All 60 slots completed, with 121 native calls. One repaired raw schema error invalidates the preregistered window despite zero final malformed draws. Status remains `COMPLETED_INVALID_WINDOW_DESCRIPTIVE_ONLY`. T1 is not scheduled. No valid T0/T1 comparison or full Class R certification.
-- **PR #255, native offline Class D only.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba`. Nine draws, 18 native calls, both positive fixtures 3/3, zero raw or final malformed errors, zero operational failures, and zero cheat detections. The historical resident suite passed 14 tests. Status remains `OFFLINE_D_PASS` for native Codex 0.163.0, terra/high, OpenAI/ChatGPT only. It does not certify CLIProxyAPI, a live canary, or production rollout.
+- **PR #255, native offline Class D only.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba`. Nine draws, 18 native calls, both positive fixtures 3/3, zero raw or final malformed errors, zero operational failures, and zero cheat detections. The historical resident suite passed 14 tests. Status remains `OFFLINE_D_PASS` for native Codex 0.163.0, terra/high, OpenAI/ChatGPT only. It does not certify a private gateway, a live canary, or production rollout.
 
 Each study records one bait exposure without adoption or escape. Reports retain original bytes and separate identities. The verifier checks public copies and extracts; omitted private traces and historical execution are not independently reproduced by that check.
 
-## 2026-10-16 completed Ubuntu CLIProxyAPI studies
+## 2026-10-16 completed Ubuntu private gateway studies
 
 [The immutable archive and portable verifier](evidence/2026-10-16-ubuntu-proxy/README.md) record the completed isolated installation canary and invalid proxy offline study. This evidence-only publication changes no pipeline, prompt, fixture, output acceptance, or scorer and requires no new model gate.
 
@@ -2397,4 +2397,4 @@ Each study records one bait exposure without adoption or escape. Reports retain 
 - **PR #255 installation canary.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba` failed the host-capacity assertion before its first protocol-v3 model call and automatically rolled back. Its earlier v2 draw remains recorded as a superseded observation. No passing window or full Class D certificate is issued.
 - **PR #255 proxy offline Class D study.** The same `6032f98` source completed nine draws and 19 native calls, but its status is `INVALID_OFFLINE_D_GATE`. The capacity observer paused the eval parent for 40.372 seconds. One intermediate critic contract error required a re-ask despite zero final malformed draws. Both positive fixtures scored 3/3; those counts cannot qualify the invalid measurement. Raw bait exposures were two, with zero adoption, escape, or cheat detection. The resident suite recorded 14/14 passes.
 
-The lane was Codex 0.163.0, CLIProxyAPI, `gpt-5.6-terra/high` on Ubuntu Node 26.8.2. Proxy service version remains unknown. The earlier native offline pass does not transfer to this provider. Both owned roots and processes were cleared, with the existing installation pointers unchanged. This archive does not certify GitHub posting, fleet deployment, production rollout, or either source's full Class D gate. It preserves failures and superseded windows without new trials or replacement draws.
+The lane was Codex 0.163.0, a private gateway, `gpt-5.6-terra/high` on Ubuntu Node 26.8.2. Proxy service version remains unknown. The earlier native offline pass does not transfer to this provider. Both owned roots and processes were cleared, with the existing installation pointers unchanged. This archive does not certify GitHub posting, fleet deployment, production rollout, or either source's full Class D gate. It preserves failures and superseded windows without new trials or replacement draws.

@@ -170,7 +170,7 @@
   every map/review, deep, critic, JSON-repair and process retry; each runner
   attempt is capped by the smaller of its per-attempt timeout and the remaining
   time, and expiry fails closed. Explicit `CODEX_SERVICE_TIER` now also reaches
-  proxy (CLIProxyAPI) invocations. This is the self-managed runner patch that has
+  proxy (private gateway) invocations. This is the self-managed runner patch that has
   run in production since 2026-09-10, merged upstream (#124).
 
 ## 0.4.4 — 2026-09-13
