@@ -55,7 +55,7 @@ files and takes the production large path without forced `--deep`. This is
 a narrow workload study, not representative evidence across repositories.
 
 The fixed lane is native Codex CLI 0.163.0, `gpt-5.6-terra`, high effort,
-OpenAI, ChatGPT subscription. The private gateway is a separate lane and is not a
+OpenAI, ChatGPT subscription. CLIProxyAPI is a separate lane and is not a
 substitute. Before execution, record the actual binary and Node SHA-256,
 versions, dependency inventory, OS, host identity, and operator-attested route.
 Do not archive credentials. Reject an unexpected model, provider, version,

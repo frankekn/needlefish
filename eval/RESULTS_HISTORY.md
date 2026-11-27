@@ -696,7 +696,7 @@ Both vs sol-medium baseline (recall 93.1% / FP 12.5%). Single draw each; promptH
 | lineAnchorValidRate | 89.3% | 88.1% |
 | meanDurationMs | 52s | 53s |
 
-Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=gateway for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
+Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=<private gateway provider> for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
 
 ## 2026-07-12 — challenger lanes x3 confirm: grok-4.5 @ xhigh, opus-4.8 @ xhigh (Pi/private gateway) — full set, 84 fixtures, 252 draws each, holdout include
 

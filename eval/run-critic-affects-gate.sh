@@ -13,7 +13,10 @@ LOG="eval/results/run-critic-r1-full-gate-$STAMP.log"
 
 : "${CODEX_PROXY_BASE_URL:?set CODEX_PROXY_BASE_URL to the private gateway URL}"
 export CODEX_PROXY_BASE_URL
-export CODEX_PROXY_API_KEY=$(cat "${CODEX_PROXY_KEY_FILE:?set CODEX_PROXY_KEY_FILE}")
+: "${CODEX_PROXY_KEY_FILE:?set CODEX_PROXY_KEY_FILE}"
+CODEX_PROXY_API_KEY=$(cat "$CODEX_PROXY_KEY_FILE") || exit 1
+[ -n "$CODEX_PROXY_API_KEY" ] || { echo "empty key file: $CODEX_PROXY_KEY_FILE" >&2; exit 1; }
+export CODEX_PROXY_API_KEY
 
 echo "=== $(date -u +%FT%TZ) START deepseek-v4.1-flash high x3 (codex) ===" | tee -a "$LOG"
 if node --import tsx eval/run.ts \
