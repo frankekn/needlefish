@@ -13,6 +13,58 @@ macro-averaged over the frozen family map in `eval/leaderboard.json`; negative
 fixtures remain equally weighted. The two sides remain 50/50. Tier-1,
 anti-cheat, and positive-noise rules remain separate gates.
 
+## 2026-11-28 — Pagination holdout answer key corrected; published lanes rescored
+
+The structured facts of `holdout-pagination-round-down` accepted only a few
+phrasings, so correct findings were scored as misses. Examples are naming
+the cause as `floor` against `ceil`, stating the loss with numbers
+(`pageCount(11, 10) returns 1 instead of 2`), or writing `0 pages`. A
+transcript-blind curator appended alternatives from the fixture description
+and the frozen fact meanings. It did not see results, reports, or
+transcripts. Existing alternatives, facts, the anchor, and the verdict are
+unchanged.
+
+All 23 published reports, plus the excluded Muse 87-fixture x1 rescore that the
+manifest describes as hash-matched, were rescored offline with the repo scorer.
+There were no model calls, and findings and verdicts are untouched.
+- The rescore recomputed each draw's score fields, its final `matchEvidence`,
+  and the report aggregates that depend on them.
+- It set `fixtureSetHash` to `748bd9d4badc06b9`.
+- Before the change, the same script reproduced every stored score, every
+  stored aggregate, the stored evidence, and `e9923bbc7753a04a`.
+
+No lane lost a hit. Eight draws flipped from miss to hit, and each was checked
+by hand as a single anchored finding on `src/pagination.ts:3` that states both
+facts. Each flipped finding now also counts as anchored rather than as noise.
+
+| Report | Balanced | Noise |
+| --- | ---: | ---: |
+| [Claude Opus 5.5 medium](results/2026-11-21-public87-opus-x3.json) | 95.73% → 96.03% | 0.066 → 0.060 |
+| [DeepSeek V4.1 Flash high](results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | 95.63% → 95.93% | 0.044 → 0.038 |
+| [Qwen 3.8 Flash max](results/2026-09-09-pi-qwen38-flash-max-x3.json) | 95.24% → 95.54% | 0.055 → 0.049 |
+| [Inkling 2 Mini high](results/2026-11-27-public87-inkling-2-mini-high-x3.json) | 95.04% → 95.34% | 0.016 → 0.011 |
+| [GLM-5.3-Flash max (2026-09-09)](results/2026-09-09-pi-glm53-flash-max-x3.json) | 94.94% → 95.24% | 0.038 → 0.033 |
+| [GLM-5.3-Flash max (2026-09-06)](results/2026-09-06-pi-zai-glm53-flash-max-x3.json) | 94.74% → 95.04% | 0.022 → 0.016 |
+| [Muse Wonder 1.0 high](results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json) | 90.38% → 90.67% | 0.060 → 0.055 |
+| [GPT-5.6 Sol medium](results/2026-09-06-codex-gpt56-sol-medium-x3.json) | 88.00% → 88.29% | 0.077 → 0.071 |
+
+The appended consequence alternatives also reject findings that deny the loss
+(`never skip the final page`, `no pages are lost`, `not an undercount`,
+`does not return zero pages`). A numeric "N pages instead of M" alternative was
+dropped because a regex cannot tell an undercount from the reversed claim.
+Neither change moved a published draw.
+
+Reports do not store candidate findings, so this fixture's
+`candidateMatchEvidence` cannot be rescored under the new key. It was removed
+from these draws, and every consumer reads a missing array as "no candidate
+evidence":
+- Calibration skips the draws for reviewer recall and critic retention.
+- `criticPrunedRecallCount` is unchanged in every report, because no pagination
+  miss had been classified as critic-pruned.
+
+At least six draws that state both facts in other words still miss. They were
+not fed back to the curator.
+
 ## 2026-11-27 — Inkling 2 Mini high on local hardware
 
 Pi 1.6.1 reached `inkling-2-mini` through the private gateway. The model ran on one
