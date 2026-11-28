@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../../src/shared/schema";
 import selfReviewCheckout from "../fixtures-real/real-pr1-self-review-tool-checkout/spec";
+import paginationRoundDown from "../fixtures/holdout-pagination-round-down/spec";
 import invertedGuard from "../fixtures/t1-inverted-guard/spec";
 import {
 	fileMatchesAnchor,
@@ -134,6 +135,156 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 		}
 	});
 }
+
+// holdout-pagination-round-down: a competent reviewer states each fact as the
+// operation (floor, truncation, no longer rounding up), as concrete numbers, or
+// as what callers can no longer reach. These phrasings were written from the
+// fixture description and diff. The anchor file and a concrete claim about the
+// lost page or lost items stay required; floor-only or generic pagination text
+// must not score.
+const paginationFile = paginationRoundDown.expected.anchorFile!;
+const paginationFacts = paginationRoundDown.expected.mustFind![0].facts!;
+const paginationFinding = (
+	title: string,
+	whyItBreaks: string,
+	file = paginationFile,
+): Finding => finding({ title, whyItBreaks, file, lineStart: 3 });
+const paginationHits = (findings: readonly Finding[]): number =>
+	score(
+		{ verdict: "changes_requested", findings },
+		paginationRoundDown.expected,
+		paginationRoundDown.id,
+	).mustFindHits;
+const paginationFactHit = (f: Finding, factId: string): boolean =>
+	matchesSpec(f, {
+		file: paginationFile,
+		facts: paginationFacts.filter((fact) => fact.id === factId),
+	});
+
+test("holdout-pagination-round-down: admits operation, numeric and consumer phrasings on the anchor only", () => {
+	// Each case is [title, whyItBreaks] pairs; a one-element case states both
+	// facts in one finding, a two-element case splits cause and consequence.
+	const cases: readonly (readonly (readonly [string, string])[])[] = [
+		[
+			[
+				"Page total computed with a floored quotient",
+				"pageCount divides totalItems / pageSize and floors the quotient instead of taking the ceiling. When totalItems is not a multiple of pageSize the trailing items sit on a page that is never counted, so they cannot be reached.",
+			],
+		],
+		[
+			[
+				"Count no longer rounds up",
+				"pageCount no longer rounds up the result of the division.",
+			],
+			[
+				"Small lists report nothing",
+				"pageCount(5, 10) returns 0 although there are items to list.",
+			],
+		],
+		[
+			[
+				"Division truncates the total",
+				"The number of pages is computed with integer division and truncates 10 / 3 to 3.",
+			],
+			[
+				"One page too few",
+				"With 10 items and 3 per page the function reports 3 pages instead of 4, so the tenth item has no page.",
+			],
+		],
+		[
+			[
+				"Count is rounded toward zero",
+				"The number of pages is rounded toward zero by the new code.",
+			],
+			[
+				"Paging UI stops early",
+				"A UI iterating up to pageCount never displays the final items, because the last page is excluded.",
+			],
+		],
+		[
+			[
+				"Ceiling replaced",
+				"Page count was changed from ceiling to floor.",
+			],
+			[
+				"Short lists vanish",
+				"A catalogue with fewer entries than the page size reports no pages at all.",
+			],
+		],
+		[
+			[
+				"Floor on the page quotient",
+				"pageCount uses floor on totalItems / pageSize.",
+			],
+			[
+				"Uneven totals undercounted",
+				"When the item count is not evenly divisible by the page size the total is one page short, an off-by-one undercount of pages.",
+			],
+		],
+	];
+	for (const pairs of cases) {
+		const label = pairs.map(([, why]) => why).join(" | ");
+		const onAnchor = pairs.map(([title, why]) => paginationFinding(title, why));
+		assert.equal(paginationHits(onAnchor), 1, label);
+		assert.equal(
+			paginationHits(
+				pairs.map(([title, why]) => paginationFinding(title, why, "src/other.ts")),
+			),
+			0,
+			`anchor still required: ${label}`,
+		);
+		if (pairs.length === 2) {
+			assert.equal(paginationHits([onAnchor[0]]), 0, `consequence needed: ${label}`);
+			assert.equal(paginationHits([onAnchor[1]]), 0, `cause needed: ${label}`);
+			assert.equal(paginationFactHit(onAnchor[0], "page_count_rounds_down"), true, label);
+			assert.equal(paginationFactHit(onAnchor[1], "partial_page_is_lost"), true, label);
+		}
+	}
+});
+
+test("holdout-pagination-round-down: floor-only, generic, other-file and keyword-stuffed text does not hit", () => {
+	// [title, whyItBreaks, rounds-down fact hit, partial-page fact hit]
+	const negatives: readonly (readonly [string, string, boolean, boolean])[] = [
+		// Names the operation but asserts no loss: only the first fact.
+		["Page count uses floor", "pageCount now calls Math.floor on totalItems / pageSize.", true, false],
+		["Quotient is floored", "The quotient of totalItems / pageSize is floored in pageCount.", true, false],
+		// Generic pagination wording asserts neither fact.
+		["Pagination logic changed", "The pageCount calculation was modified in this diff.", false, false],
+		["Page size validation", "The pageSize must be positive check is still present and unchanged.", false, false],
+		["Pagination edge handling", "Pagination now handles the final page differently and the item total is computed in a new way.", false, false],
+		// Keywords for page, floor and zero around unrelated claims.
+		["Zero-based page index is fine", "Page numbers are zero-based and that is fine; the floor import is unused.", false, false],
+		["Page size zero is rejected", "pageSize of zero throws before any floor or ceiling constant is compared and the rounding of the margin down is cosmetic.", false, false],
+		["Pages sidebar width snapping", "The pages sidebar width is snapped to the nearest pixel and the zero state is a pageSize default; floor plan labels are unrelated.", false, false],
+		["Callers should not loop past the end", "Callers of pageCount should not loop past the last page.", false, false],
+	];
+	for (const [title, why, roundsDown, partialLost] of negatives) {
+		const f = paginationFinding(title, why);
+		assert.equal(paginationFactHit(f, "page_count_rounds_down"), roundsDown, why);
+		assert.equal(paginationFactHit(f, "partial_page_is_lost"), partialLost, why);
+		assert.equal(paginationHits([f]), 0, why);
+	}
+	// A floor-only finding paired with generic text still misses the second fact.
+	assert.equal(
+		paginationHits([
+			paginationFinding(negatives[0][0], negatives[0][1]),
+			paginationFinding(negatives[2][0], negatives[2][1]),
+		]),
+		0,
+	);
+	// A correct consequence on another file never completes the pair.
+	const consequence = "With 10 items and 3 per page the function reports 3 pages instead of 4, so the tenth item has no page.";
+	for (const file of ["src/other.ts", "src/pagination.test.ts"]) {
+		assert.equal(
+			paginationHits([
+				paginationFinding(negatives[0][0], negatives[0][1]),
+				paginationFinding("Tail item lost", consequence, file),
+			]),
+			0,
+			file,
+		);
+	}
+});
 
 test("split facts: evidence, noise, filters, line diagnostics, and critic pruning agree", () => {
 	const spec = {
