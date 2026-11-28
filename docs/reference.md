@@ -580,9 +580,15 @@ the execution checkout. Resolve that commit before running any models.
    the live report against the same baseline identities and verify the published
    runner metadata, completeness, and anti-cheat results before adding the lane.
 
-The current frozen baseline uses 87 fixtures, fixture set `e9923bbc7753a04a`,
+The current frozen baseline uses 87 fixtures, fixture set `2327f9134a425a4f`,
 scorer `8bbc6152d8b45a43`, prompt `e62d0889fc704541`, and anti-cheat v2.
 Resolve those values from the manifest whenever the benchmark advances.
+
+The fixture set moved from `e9923bbc7753a04a` when the published reports were
+rescored against the corrected `holdout-pagination-round-down` answer key (see
+[`eval/RESULTS.md`](../eval/RESULTS.md)). The execution checkout still holds the
+old answer key. Before the dry run, overlay that fixture's `spec.ts` from the
+default branch. Model inputs do not change; only scoring does.
 
 ## Historical benchmark notes
 

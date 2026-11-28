@@ -1427,6 +1427,40 @@
                     "Math\\.ceil",
                     "Math\\.floor"
                   ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bceil(?:ing)?\\b.{0,40}\\bfloor(?:s|ed|ing)?\\b|\\bfloor(?:s|ed|ing)?\\b.{0,40}\\bceil(?:ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bfloor(?:s|ed|ing)?\\b",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:truncat\\w*|integer division)",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bround\\w*\\b.{0,40}\\b(?:down(?:ward)?|toward(?:s)? zero)\\b",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:no longer|not|stop\\w*|instead of|rather than|without)\\W+(?:\\w+\\W+){0,4}?(?:round\\w*\\W+up\\b|ceil\\w*)",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
                 }
               ]
             },
@@ -1452,6 +1486,54 @@
                     "zero",
                     "page",
                     "(?:fewer|less|below|under)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "\\b(?:trailing|leftover|remaining|remainder|extra|excess|overflow|last|final)\\s+(?:\\w+\\s+){0,2}(?:items?|rows?|records?|results?|entries)",
+                    "\\b(?:unreachable|inaccessible|invisible|hidden|never\\s+(?:\\w+\\s+){0,2}(?:shown|reached|returned|rendered|displayed|fetched|visited|listed|requested)|(?:cannot|can't|can not|can no longer|no longer|not|won't)\\s+(?:\\w+\\s+){0,2}(?:reach\\w*|fetch\\w*|view\\w*|see\\w*|access\\w*|shown|displayed|visible|listed|retrieved|paged|rendered))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:callers?|consumers?|clients?|UI|loops?|iterat\\w+|fetch\\w*|walk\\w*|page through|users?)\\b",
+                    "pageCount|page count|number of pages|total pages|page total",
+                    "\\b(?:never|stops?|skips?|misses?|cannot|can't|won't|short of|ends? (?:before|short))\\b",
+                    "\\b(?:last|final|trailing|remaining|leftover|partial|remainder|extra)\\s+(?:\\w+\\s+){0,2}(?:page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:\\b0|\\bzero|\\bno)\\s+pages?\\b",
+                    "\\b(?:smaller|fewer|less|below|under|short|single|partial|only|small\\w*|[a-z]+\\s+than)\\b.{0,40}(?:page ?size|per page|one page|a full page|a page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pageCount\\(\\s*[1-9]\\d*\\s*,\\s*[1-9]\\d*\\s*\\)",
+                    "(?:\\b(?:returns?|yields?|gives?|evaluates to|results? in|produces?|reports?)|=|\u2192|->)\\s*(?:0|zero)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+items?\\b",
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+pages?\\b",
+                    "page ?size|per page|each page|a page",
+                    "(?:instead of|rather than|whereas|expected|should (?:be|return|report|give|yield))\\W+(?:\\w+\\W+){0,2}(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:partial|last|final|trailing|remaining|leftover|incomplete|remainder)\\s+(?:\\w+\\s+){0,1}page",
+                    "(?:\\b(?:not|never|isn't|aren't|no longer|won't|doesn't|does not)\\s+(?:\\w+\\s+){0,2}(?:counted|included|reported|returned|shown|displayed|reach\\w*|fetched|accounted|covered|rendered|listed)|\\b(?:excluded|ignored|skipped|truncated|cut off|left out|uncounted|unreachable))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "(?:undercount\\w*|one (?:page )?(?:too )?(?:few|short|less)|short by (?:one|1)|off[- ]by[- ]one|\\b(?:one|1) fewer)",
+                    "(?:evenly|divisible|multiple of|remainder|leftover|not exact\\w*|uneven)"
                   ]
                 }
               ]
@@ -1592,6 +1674,40 @@
                     "Math\\.ceil",
                     "Math\\.floor"
                   ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bceil(?:ing)?\\b.{0,40}\\bfloor(?:s|ed|ing)?\\b|\\bfloor(?:s|ed|ing)?\\b.{0,40}\\bceil(?:ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bfloor(?:s|ed|ing)?\\b",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:truncat\\w*|integer division)",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bround\\w*\\b.{0,40}\\b(?:down(?:ward)?|toward(?:s)? zero)\\b",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:no longer|not|stop\\w*|instead of|rather than|without)\\W+(?:\\w+\\W+){0,4}?(?:round\\w*\\W+up\\b|ceil\\w*)",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
                 }
               ]
             },
@@ -1617,6 +1733,54 @@
                     "zero",
                     "page",
                     "(?:fewer|less|below|under)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "\\b(?:trailing|leftover|remaining|remainder|extra|excess|overflow|last|final)\\s+(?:\\w+\\s+){0,2}(?:items?|rows?|records?|results?|entries)",
+                    "\\b(?:unreachable|inaccessible|invisible|hidden|never\\s+(?:\\w+\\s+){0,2}(?:shown|reached|returned|rendered|displayed|fetched|visited|listed|requested)|(?:cannot|can't|can not|can no longer|no longer|not|won't)\\s+(?:\\w+\\s+){0,2}(?:reach\\w*|fetch\\w*|view\\w*|see\\w*|access\\w*|shown|displayed|visible|listed|retrieved|paged|rendered))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:callers?|consumers?|clients?|UI|loops?|iterat\\w+|fetch\\w*|walk\\w*|page through|users?)\\b",
+                    "pageCount|page count|number of pages|total pages|page total",
+                    "\\b(?:never|stops?|skips?|misses?|cannot|can't|won't|short of|ends? (?:before|short))\\b",
+                    "\\b(?:last|final|trailing|remaining|leftover|partial|remainder|extra)\\s+(?:\\w+\\s+){0,2}(?:page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:\\b0|\\bzero|\\bno)\\s+pages?\\b",
+                    "\\b(?:smaller|fewer|less|below|under|short|single|partial|only|small\\w*|[a-z]+\\s+than)\\b.{0,40}(?:page ?size|per page|one page|a full page|a page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pageCount\\(\\s*[1-9]\\d*\\s*,\\s*[1-9]\\d*\\s*\\)",
+                    "(?:\\b(?:returns?|yields?|gives?|evaluates to|results? in|produces?|reports?)|=|\u2192|->)\\s*(?:0|zero)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+items?\\b",
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+pages?\\b",
+                    "page ?size|per page|each page|a page",
+                    "(?:instead of|rather than|whereas|expected|should (?:be|return|report|give|yield))\\W+(?:\\w+\\W+){0,2}(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:partial|last|final|trailing|remaining|leftover|incomplete|remainder)\\s+(?:\\w+\\s+){0,1}page",
+                    "(?:\\b(?:not|never|isn't|aren't|no longer|won't|doesn't|does not)\\s+(?:\\w+\\s+){0,2}(?:counted|included|reported|returned|shown|displayed|reach\\w*|fetched|accounted|covered|rendered|listed)|\\b(?:excluded|ignored|skipped|truncated|cut off|left out|uncounted|unreachable))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "(?:undercount\\w*|one (?:page )?(?:too )?(?:few|short|less)|short by (?:one|1)|off[- ]by[- ]one|\\b(?:one|1) fewer)",
+                    "(?:evenly|divisible|multiple of|remainder|leftover|not exact\\w*|uneven)"
                   ]
                 }
               ]
@@ -1757,6 +1921,40 @@
                     "Math\\.ceil",
                     "Math\\.floor"
                   ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bceil(?:ing)?\\b.{0,40}\\bfloor(?:s|ed|ing)?\\b|\\bfloor(?:s|ed|ing)?\\b.{0,40}\\bceil(?:ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bfloor(?:s|ed|ing)?\\b",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:truncat\\w*|integer division)",
+                    "(?:totalItems\\s*/\\s*pageSize|\\d+\\s*/\\s*\\d+|quotient|division|divid\\w+)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\bround\\w*\\b.{0,40}\\b(?:down(?:ward)?|toward(?:s)? zero)\\b",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page(?:Count| count|s\\b)",
+                    "\\b(?:no longer|not|stop\\w*|instead of|rather than|without)\\W+(?:\\w+\\W+){0,4}?(?:round\\w*\\W+up\\b|ceil\\w*)",
+                    "count|total|number|quotient|division|divid\\w+|\\d+\\s*/\\s*\\d+"
+                  ]
                 }
               ]
             },
@@ -1782,6 +1980,54 @@
                     "zero",
                     "page",
                     "(?:fewer|less|below|under)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "\\b(?:trailing|leftover|remaining|remainder|extra|excess|overflow|last|final)\\s+(?:\\w+\\s+){0,2}(?:items?|rows?|records?|results?|entries)",
+                    "\\b(?:unreachable|inaccessible|invisible|hidden|never\\s+(?:\\w+\\s+){0,2}(?:shown|reached|returned|rendered|displayed|fetched|visited|listed|requested)|(?:cannot|can't|can not|can no longer|no longer|not|won't)\\s+(?:\\w+\\s+){0,2}(?:reach\\w*|fetch\\w*|view\\w*|see\\w*|access\\w*|shown|displayed|visible|listed|retrieved|paged|rendered))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:callers?|consumers?|clients?|UI|loops?|iterat\\w+|fetch\\w*|walk\\w*|page through|users?)\\b",
+                    "pageCount|page count|number of pages|total pages|page total",
+                    "\\b(?:never|stops?|skips?|misses?|cannot|can't|won't|short of|ends? (?:before|short))\\b",
+                    "\\b(?:last|final|trailing|remaining|leftover|partial|remainder|extra)\\s+(?:\\w+\\s+){0,2}(?:page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:\\b0|\\bzero|\\bno)\\s+pages?\\b",
+                    "\\b(?:smaller|fewer|less|below|under|short|single|partial|only|small\\w*|[a-z]+\\s+than)\\b.{0,40}(?:page ?size|per page|one page|a full page|a page|items?|rows?|records?|results?|entries)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pageCount\\(\\s*[1-9]\\d*\\s*,\\s*[1-9]\\d*\\s*\\)",
+                    "(?:\\b(?:returns?|yields?|gives?|evaluates to|results? in|produces?|reports?)|=|\u2192|->)\\s*(?:0|zero)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+items?\\b",
+                    "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+pages?\\b",
+                    "page ?size|per page|each page|a page",
+                    "(?:instead of|rather than|whereas|expected|should (?:be|return|report|give|yield))\\W+(?:\\w+\\W+){0,2}(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:partial|last|final|trailing|remaining|leftover|incomplete|remainder)\\s+(?:\\w+\\s+){0,1}page",
+                    "(?:\\b(?:not|never|isn't|aren't|no longer|won't|doesn't|does not)\\s+(?:\\w+\\s+){0,2}(?:counted|included|reported|returned|shown|displayed|reach\\w*|fetched|accounted|covered|rendered|listed)|\\b(?:excluded|ignored|skipped|truncated|cut off|left out|uncounted|unreachable))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pages?\\b",
+                    "(?:undercount\\w*|one (?:page )?(?:too )?(?:few|short|less)|short by (?:one|1)|off[- ]by[- ]one|\\b(?:one|1) fewer)",
+                    "(?:evenly|divisible|multiple of|remainder|leftover|not exact\\w*|uneven)"
                   ]
                 }
               ]
@@ -17486,7 +17732,7 @@
     "criticPrunedRecallCount": 0
   },
   "gitSha": "934cac7e9ea5b3a645d2a43254d022e900eac20d",
-  "fixtureSetHash": "e9923bbc7753a04a",
+  "fixtureSetHash": "2327f9134a425a4f",
   "scorerHash": "8bbc6152d8b45a43",
   "fixtureTiers": {
     "docker-infra-supply-chain": 2,

@@ -13,6 +13,44 @@ macro-averaged over the frozen family map in `eval/leaderboard.json`; negative
 fixtures remain equally weighted. The two sides remain 50/50. Tier-1,
 anti-cheat, and positive-noise rules remain separate gates.
 
+## 2026-11-28 — Pagination holdout answer key corrected; published lanes rescored
+
+The structured facts of `holdout-pagination-round-down` accepted only a few
+phrasings, so correct findings were scored as misses. Examples are naming
+the cause as `floor` against `ceil`, stating the loss with numbers
+(`pageCount(11, 10) returns 1 instead of 2`), or writing `0 pages`. A
+transcript-blind curator appended alternatives from the fixture description
+and the frozen fact meanings. It did not see results, reports, or
+transcripts. Existing alternatives, facts, the anchor, and the verdict are
+unchanged.
+
+All 23 published reports were rescored offline with the repo scorer. There
+were no model calls, and findings and verdicts are untouched. The rescore
+recomputed each draw's score fields and final `matchEvidence` and the report
+aggregates that depend on them, and set `fixtureSetHash` to `2327f9134a425a4f`.
+Before the change, the same script reproduced every stored score, every stored
+aggregate, the stored evidence, and `e9923bbc7753a04a`.
+
+No lane lost a hit. Eight draws flipped from miss to hit, and each was checked
+by hand as a single anchored finding on `src/pagination.ts:3` that states both
+facts. Each flipped finding now also counts as anchored rather than as noise.
+
+| Report | Balanced | Noise |
+| --- | ---: | ---: |
+| [Claude Opus 5.5 medium](results/2026-11-21-public87-opus-x3.json) | 95.73% → 96.03% | 0.066 → 0.060 |
+| [DeepSeek V4.1 Flash high](results/2026-11-21-public87-deepseek-v4.1-flash-high-x3.json) | 95.63% → 95.93% | 0.044 → 0.038 |
+| [Qwen 3.8 Flash max](results/2026-09-09-pi-qwen38-flash-max-x3.json) | 95.24% → 95.54% | 0.055 → 0.049 |
+| [Inkling 2 Mini high](results/2026-11-27-public87-inkling-2-mini-high-x3.json) | 95.04% → 95.34% | 0.016 → 0.011 |
+| [GLM-5.3-Flash max (2026-09-09)](results/2026-09-09-pi-glm53-flash-max-x3.json) | 94.94% → 95.24% | 0.038 → 0.033 |
+| [GLM-5.3-Flash max (2026-09-06)](results/2026-09-06-pi-zai-glm53-flash-max-x3.json) | 94.74% → 95.04% | 0.022 → 0.016 |
+| [Muse Wonder 1.0 high](results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json) | 90.38% → 90.67% | 0.060 → 0.055 |
+| [GPT-5.6 Sol medium](results/2026-09-06-codex-gpt56-sol-medium-x3.json) | 88.00% → 88.29% | 0.077 → 0.071 |
+
+`candidateMatchEvidence` was not recomputed. Reports do not store candidate
+findings, so `criticPrunedRecallCount` still reflects the old answer key on the
+candidate side. At least six draws that state both facts in other words still
+miss. They were not fed back to the curator.
+
 ## 2026-11-27 — Inkling 2 Mini high on local hardware
 
 Pi 1.6.1 reached `inkling-2-mini` through the private gateway. The model ran on one
