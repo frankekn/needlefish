@@ -24,12 +24,14 @@ and the frozen fact meanings. It did not see results, reports, or
 transcripts. Existing alternatives, facts, the anchor, and the verdict are
 unchanged.
 
-All 23 published reports were rescored offline with the repo scorer. There
-were no model calls, and findings and verdicts are untouched. The rescore
-recomputed each draw's score fields and final `matchEvidence` and the report
-aggregates that depend on them, and set `fixtureSetHash` to `4a03618935c24bec`.
-Before the change, the same script reproduced every stored score, every stored
-aggregate, the stored evidence, and `e9923bbc7753a04a`.
+All 23 published reports, plus the excluded Muse 87-fixture x1 rescore that the
+manifest describes as hash-matched, were rescored offline with the repo scorer.
+There were no model calls, and findings and verdicts are untouched.
+- The rescore recomputed each draw's score fields, its final `matchEvidence`,
+  and the report aggregates that depend on them.
+- It set `fixtureSetHash` to `7349610fc52498f9`.
+- Before the change, the same script reproduced every stored score, every
+  stored aggregate, the stored evidence, and `e9923bbc7753a04a`.
 
 No lane lost a hit. Eight draws flipped from miss to hit, and each was checked
 by hand as a single anchored finding on `src/pagination.ts:3` that states both
@@ -47,17 +49,21 @@ facts. Each flipped finding now also counts as anchored rather than as noise.
 | [GPT-5.6 Sol medium](results/2026-09-06-codex-gpt56-sol-medium-x3.json) | 88.00% → 88.29% | 0.077 → 0.071 |
 
 The appended consequence alternatives also reject findings that deny the loss
-(`never skip the final page`, `no pages are lost`, `not an undercount`). A
-numeric "N pages instead of M" alternative was dropped because a regex cannot
-tell an undercount from the reversed claim. Neither change moved a published
-draw.
+(`never skip the final page`, `no pages are lost`, `not an undercount`,
+`does not return zero pages`). A numeric "N pages instead of M" alternative was
+dropped because a regex cannot tell an undercount from the reversed claim.
+Neither change moved a published draw.
 
-`candidateMatchEvidence` was not recomputed. Reports do not store candidate
-findings, so `criticPrunedRecallCount` and the calibration candidate-side
-metrics (`eval/shared/calibration.ts`) still reflect the old answer key for this
-fixture. Do not use these reports as calibration input for it. At least six
-draws that state both facts in other words still miss. They were not fed back
-to the curator.
+Reports do not store candidate findings, so this fixture's
+`candidateMatchEvidence` cannot be rescored under the new key. It was removed
+from these draws, and every consumer reads a missing array as "no candidate
+evidence":
+- Calibration skips the draws for reviewer recall and critic retention.
+- `criticPrunedRecallCount` is unchanged in every report, because no pagination
+  miss had been classified as critic-pruned.
+
+At least six draws that state both facts in other words still miss. They were
+not fed back to the curator.
 
 ## 2026-11-27 — Inkling 2 Mini high on local hardware
 

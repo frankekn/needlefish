@@ -2,9 +2,9 @@ import type { FixtureSpec } from "../../shared/types";
 
 // Appended consequence alternatives are keyword conjunctions, so each also
 // requires that the finding never denies a loss ("never skip the final page",
-// "no pages are lost", "not an undercount").
+// "no pages are lost", "not an undercount", "does not return zero pages").
 const NO_DENIED_LOSS =
-  "^(?![\\s\\S]*\\b(?:no|not|never|nothing|none|isn't|aren't|doesn't|does not|don't|won't)\\s+(?:\\w+\\s+){0,3}(?:lost|loses?|losing|drop\\w*|skip\\w*|miss\\w*|omit\\w*|exclud\\w*|ignor\\w*|truncat\\w*|cut off|left out|undercount\\w*|off[- ]by[- ]one|short\\b))";
+  "^(?![\\s\\S]*\\b(?:no|not|never|nothing|none|isn't|aren't|doesn't|does not|don't|won't)\\s+(?:\\w+\\s+){0,3}(?:lost|loses?|losing|drop\\w*|skip\\w*|miss\\w*|omit\\w*|exclud\\w*|ignor\\w*|truncat\\w*|cut off|left out|undercount\\w*|off[- ]by[- ]one|short\\b|(?:return|yield|giv|report|produc|comput|evaluat|result)\\w*\\s+(?:in\\s+|to\\s+)?(?:0|zero|no)\\b))";
 
 // HOLDOUT: sealed at authoring time. Never run during iteration; first model
 // exposure is the holdout-included final production gate.
@@ -117,6 +117,7 @@ const spec: FixtureSpec = {
                 allOf: [
                   "pageCount\\(\\s*[1-9]\\d*\\s*,\\s*[1-9]\\d*\\s*\\)",
                   "(?:\\b(?:returns?|yields?|gives?|evaluates to|results? in|produces?|reports?)|=|→|->)\\s*(?:0|zero)\\b",
+                  NO_DENIED_LOSS,
                 ],
               },
               {

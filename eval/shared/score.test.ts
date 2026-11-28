@@ -296,6 +296,7 @@ test("holdout-pagination-round-down: denied or reversed consequences do not comp
 		"With 10 items and 3 per page, pageCount returns 4 pages instead of 3.",
 		"The page count is not an undercount when totals are evenly divisible.",
 		"The last page is never skipped, so remaining items are always shown on a page.",
+		"pageCount(5, 10) does not return zero pages.",
 	]) {
 		const denial = paginationFinding("Pagination consequence", why);
 		assert.equal(paginationFactHit(denial, "partial_page_is_lost"), false, why);
