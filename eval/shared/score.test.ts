@@ -297,10 +297,27 @@ test("holdout-pagination-round-down: denied or reversed consequences do not comp
 		"The page count is not an undercount when totals are evenly divisible.",
 		"The last page is never skipped, so remaining items are always shown on a page.",
 		"pageCount(5, 10) does not return zero pages.",
+		"Callers of pageCount cannot skip the final page.",
+		"pageCount(5, 10) can't return zero pages.",
+		"The final page is not unreachable.",
 	]) {
 		const denial = paginationFinding("Pagination consequence", why);
 		assert.equal(paginationFactHit(denial, "partial_page_is_lost"), false, why);
 		assert.equal(paginationHits([cause, denial]), 0, why);
+	}
+});
+
+test("holdout-pagination-round-down: the ceil/floor cause needs the ceil-to-floor direction", () => {
+	for (const why of [
+		"pageCount still uses ceiling rather than floor.",
+		"Page count was changed from floor to ceiling.",
+	]) {
+		assert.equal(paginationFactHit(paginationFinding("Rounding", why), "page_count_rounds_down"), false, why);
+	}
+	const absent = paginationFinding("Rounding", "pageCount still uses ceiling rather than floor; no final page is dropped.");
+	assert.equal(paginationHits([absent]), 0);
+	for (const why of ["Page count was changed from ceiling to floor.", "pageCount now uses floor instead of ceil."]) {
+		assert.equal(paginationFactHit(paginationFinding("Rounding", why), "page_count_rounds_down"), true, why);
 	}
 });
 

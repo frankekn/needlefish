@@ -9,9 +9,15 @@ provider `meta`, model `muse-wonder-1.0`, and reasoning effort `high`.
 
 `original-report.json` preserves the completed report bytes. Its SHA-256 is
 `c4d16d512a3bc241b7de1fdb5fa3652b80b2eec909f0813248ad9273c6bd96c6`.
-The public report in `eval/results/` changes only environment and invocation
-metadata and adds an operator attestation. All findings, per-draw scores,
-aggregates, execution and scoring identities remain unchanged.
+The public report in `eval/results/` changes environment and invocation
+metadata and adds an operator attestation. All findings and the execution
+identity remain unchanged.
+
+On 2026-11-28 the public report was rescored offline against the corrected
+`holdout-pagination-round-down` answer key (see `eval/RESULTS.md`).
+- Changed: that fixture's per-draw score fields, its match evidence, the
+  recall-dependent aggregates, and `fixtureSetHash`.
+- Unchanged: `original-report.json`, and every other per-draw score.
 
 The old harness labels ACP credentials, credential-variable names and local
 executable paths as private. The public attestation removes the secret-value
@@ -25,7 +31,8 @@ and the steps below, including the additional `NEEDLEFISH_MUSE_BIN` passthrough.
 The original run did not use that executable override, so its environment pairs
 retain `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY`.
 Run `python3 eval/evidence/2026-10-13-muse-code-ranked-x3/verify.py` to verify
-the original bytes, unchanged experimental data and public identity metadata.
+the original bytes, unchanged experimental data, the bounded rescore, and public
+identity metadata.
 
 ## Execution records
 

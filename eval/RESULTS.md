@@ -29,7 +29,7 @@ manifest describes as hash-matched, were rescored offline with the repo scorer.
 There were no model calls, and findings and verdicts are untouched.
 - The rescore recomputed each draw's score fields, its final `matchEvidence`,
   and the report aggregates that depend on them.
-- It set `fixtureSetHash` to `7349610fc52498f9`.
+- It set `fixtureSetHash` to `748bd9d4badc06b9`.
 - Before the change, the same script reproduced every stored score, every
   stored aggregate, the stored evidence, and `e9923bbc7753a04a`.
 

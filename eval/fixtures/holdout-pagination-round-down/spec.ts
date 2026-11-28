@@ -2,9 +2,10 @@ import type { FixtureSpec } from "../../shared/types";
 
 // Appended consequence alternatives are keyword conjunctions, so each also
 // requires that the finding never denies a loss ("never skip the final page",
-// "no pages are lost", "not an undercount", "does not return zero pages").
+// "no pages are lost", "not an undercount", "does not return zero pages",
+// "cannot skip the final page", "is not unreachable").
 const NO_DENIED_LOSS =
-  "^(?![\\s\\S]*\\b(?:no|not|never|nothing|none|isn't|aren't|doesn't|does not|don't|won't)\\s+(?:\\w+\\s+){0,3}(?:lost|loses?|losing|drop\\w*|skip\\w*|miss\\w*|omit\\w*|exclud\\w*|ignor\\w*|truncat\\w*|cut off|left out|undercount\\w*|off[- ]by[- ]one|short\\b|(?:return|yield|giv|report|produc|comput|evaluat|result)\\w*\\s+(?:in\\s+|to\\s+)?(?:0|zero|no)\\b))";
+  "^(?![\\s\\S]*\\b(?:no|not|never|nothing|none|isn't|aren't|doesn't|does not|don't|won't|cannot|can't|can not)\\s+(?:\\w+\\s+){0,3}(?:lost|loses?|losing|drop\\w*|skip\\w*|miss\\w*|omit\\w*|exclud\\w*|ignor\\w*|truncat\\w*|cut off|left out|undercount\\w*|off[- ]by[- ]one|short\\b|unreachable|inaccessible|invisible|hidden|(?:return|yield|giv|report|produc|comput|evaluat|result)\\w*\\s+(?:in\\s+|to\\s+)?(?:0|zero|no)\\b))";
 
 // HOLDOUT: sealed at authoring time. Never run during iteration; first model
 // exposure is the holdout-included final production gate.
@@ -47,7 +48,7 @@ const spec: FixtureSpec = {
               {
                 allOf: [
                   "page(?:Count| count|s\\b)",
-                  "\\bceil(?:ing)?\\b.{0,40}\\bfloor(?:s|ed|ing)?\\b|\\bfloor(?:s|ed|ing)?\\b.{0,40}\\bceil(?:ing)?\\b",
+                  "\\bceil(?:ing)?\\b.{0,30}\\b(?:to|into|with|by|for)\\s+(?:\\w+\\s+){0,2}floor(?:s|ed|ing)?\\b|\\bfloor(?:s|ed|ing)?\\b.{0,20}\\b(?:instead of|rather than|in place of|replac\\w*)\\s+(?:\\w+\\s+){0,2}ceil(?:ing)?\\b",
                 ],
               },
               {
