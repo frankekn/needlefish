@@ -39,6 +39,18 @@ def frozen(report):
 
 
 assert frozen(original) == frozen(public)
+# The rescore replaces final evidence and removes stale candidate evidence; enforce that shape.
+for o, p in zip(original['results'], public['results']):
+    if p['fixtureId'] != RESCORED:
+        continue
+    assert 'candidateMatchEvidence' not in p, (p['fixtureId'], p['draw'])
+    if 'matchEvidence' in o:
+        evidence = p['matchEvidence']
+        assert isinstance(evidence, list) and len(evidence) == len(o['matchEvidence'])
+        for item in evidence:
+            index = item['findingIndex']
+            assert index is None or (isinstance(index, int) and 0 <= index < len(p['findings']))
+        assert p['score']['recall'] == all(item['findingIndex'] is not None for item in evidence)
 assert original['fixtureSetHash'] == 'e9923bbc7753a04a'
 leaderboard = json.loads((root.parent.parent / 'leaderboard.json').read_text())
 baseline = json.loads((root.parent.parent / leaderboard['baseline']).read_text())
