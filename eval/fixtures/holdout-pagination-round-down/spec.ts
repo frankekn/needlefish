@@ -1,5 +1,11 @@
 import type { FixtureSpec } from "../../shared/types";
 
+// Appended consequence alternatives are keyword conjunctions, so each also
+// requires that the finding never denies a loss ("never skip the final page",
+// "no pages are lost", "not an undercount").
+const NO_DENIED_LOSS =
+  "^(?![\\s\\S]*\\b(?:no|not|never|nothing|none|isn't|aren't|doesn't|does not|don't|won't)\\s+(?:\\w+\\s+){0,3}(?:lost|loses?|losing|drop\\w*|skip\\w*|miss\\w*|omit\\w*|exclud\\w*|ignor\\w*|truncat\\w*|cut off|left out|undercount\\w*|off[- ]by[- ]one|short\\b))";
+
 // HOLDOUT: sealed at authoring time. Never run during iteration; first model
 // exposure is the holdout-included final production gate.
 const spec: FixtureSpec = {
@@ -88,20 +94,23 @@ const spec: FixtureSpec = {
                   "pages?\\b",
                   "\\b(?:trailing|leftover|remaining|remainder|extra|excess|overflow|last|final)\\s+(?:\\w+\\s+){0,2}(?:items?|rows?|records?|results?|entries)",
                   "\\b(?:unreachable|inaccessible|invisible|hidden|never\\s+(?:\\w+\\s+){0,2}(?:shown|reached|returned|rendered|displayed|fetched|visited|listed|requested)|(?:cannot|can't|can not|can no longer|no longer|not|won't)\\s+(?:\\w+\\s+){0,2}(?:reach\\w*|fetch\\w*|view\\w*|see\\w*|access\\w*|shown|displayed|visible|listed|retrieved|paged|rendered))",
+                  NO_DENIED_LOSS,
                 ],
               },
               {
                 allOf: [
                   "\\b(?:callers?|consumers?|clients?|UI|loops?|iterat\\w+|fetch\\w*|walk\\w*|page through|users?)\\b",
                   "pageCount|page count|number of pages|total pages|page total",
-                  "\\b(?:never|stops?|skips?|misses?|cannot|can't|won't|short of|ends? (?:before|short))\\b",
+                  "\\b(?:never\\s+(?:\\w+\\s+){0,2}(?:reach|see|fetch|get|request|render|visit|display|show)\\w*|stops? (?:before|short)|skips?|misses?|cannot|can't|won't|short of|ends? (?:before|short))\\b",
                   "\\b(?:last|final|trailing|remaining|leftover|partial|remainder|extra)\\s+(?:\\w+\\s+){0,2}(?:page|items?|rows?|records?|results?|entries)",
+                  NO_DENIED_LOSS,
                 ],
               },
               {
                 allOf: [
-                  "(?:\\b0|\\bzero|\\bno)\\s+pages?\\b",
+                  "(?:\\b(?:returns?|returning|yields?|gives?|reports?|produces?|becomes?|results? in|computes?|evaluates to|shows?)|=|→|->)\\s+(?:\\w+\\s+){0,1}(?:0|zero|no)\\s+pages?\\b|\\b(?:0|zero)\\s+pages?\\s+(?:instead of|rather than|for (?:a|an|any|one|\\d))",
                   "\\b(?:smaller|fewer|less|below|under|short|single|partial|only|small\\w*|[a-z]+\\s+than)\\b.{0,40}(?:page ?size|per page|one page|a full page|a page|items?|rows?|records?|results?|entries)",
+                  NO_DENIED_LOSS,
                 ],
               },
               {
@@ -112,16 +121,9 @@ const spec: FixtureSpec = {
               },
               {
                 allOf: [
-                  "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+items?\\b",
-                  "\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\s+pages?\\b",
-                  "page ?size|per page|each page|a page",
-                  "(?:instead of|rather than|whereas|expected|should (?:be|return|report|give|yield))\\W+(?:\\w+\\W+){0,2}(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b",
-                ],
-              },
-              {
-                allOf: [
                   "\\b(?:partial|last|final|trailing|remaining|leftover|incomplete|remainder)\\s+(?:\\w+\\s+){0,1}page",
                   "(?:\\b(?:not|never|isn't|aren't|no longer|won't|doesn't|does not)\\s+(?:\\w+\\s+){0,2}(?:counted|included|reported|returned|shown|displayed|reach\\w*|fetched|accounted|covered|rendered|listed)|\\b(?:excluded|ignored|skipped|truncated|cut off|left out|uncounted|unreachable))",
+                  NO_DENIED_LOSS,
                 ],
               },
               {
@@ -129,6 +131,7 @@ const spec: FixtureSpec = {
                   "pages?\\b",
                   "(?:undercount\\w*|one (?:page )?(?:too )?(?:few|short|less)|short by (?:one|1)|off[- ]by[- ]one|\\b(?:one|1) fewer)",
                   "(?:evenly|divisible|multiple of|remainder|leftover|not exact\\w*|uneven)",
+                  NO_DENIED_LOSS,
                 ],
               },
             ],

@@ -580,7 +580,7 @@ the execution checkout. Resolve that commit before running any models.
    the live report against the same baseline identities and verify the published
    runner metadata, completeness, and anti-cheat results before adding the lane.
 
-The current frozen baseline uses 87 fixtures, fixture set `2327f9134a425a4f`,
+The current frozen baseline uses 87 fixtures, fixture set `4a03618935c24bec`,
 scorer `8bbc6152d8b45a43`, prompt `e62d0889fc704541`, and anti-cheat v2.
 Resolve those values from the manifest whenever the benchmark advances.
 

@@ -188,7 +188,7 @@ test("holdout-pagination-round-down: admits operation, numeric and consumer phra
 			],
 			[
 				"One page too few",
-				"With 10 items and 3 per page the function reports 3 pages instead of 4, so the tenth item has no page.",
+				"With 10 items and 3 per page the function reports 3 pages instead of 4, so the final item is never shown.",
 			],
 		],
 		[
@@ -273,7 +273,7 @@ test("holdout-pagination-round-down: floor-only, generic, other-file and keyword
 		0,
 	);
 	// A correct consequence on another file never completes the pair.
-	const consequence = "With 10 items and 3 per page the function reports 3 pages instead of 4, so the tenth item has no page.";
+	const consequence = "pageCount(10, 3) reports 3 pages, so the final item is never shown on any page.";
 	for (const file of ["src/other.ts", "src/pagination.test.ts"]) {
 		assert.equal(
 			paginationHits([
@@ -283,6 +283,23 @@ test("holdout-pagination-round-down: floor-only, generic, other-file and keyword
 			0,
 			file,
 		);
+	}
+});
+
+test("holdout-pagination-round-down: denied or reversed consequences do not complete a hit", () => {
+	// Review #313: keyword conjunctions must not credit sentences that deny the
+	// loss or reverse the direction, even next to a correct cause finding.
+	const cause = paginationFinding("Page count uses floor", "pageCount now calls Math.floor on totalItems / pageSize.");
+	for (const why of [
+		"Callers of pageCount never skip the final page.",
+		"No pages are lost when the item count is below the page size.",
+		"With 10 items and 3 per page, pageCount returns 4 pages instead of 3.",
+		"The page count is not an undercount when totals are evenly divisible.",
+		"The last page is never skipped, so remaining items are always shown on a page.",
+	]) {
+		const denial = paginationFinding("Pagination consequence", why);
+		assert.equal(paginationFactHit(denial, "partial_page_is_lost"), false, why);
+		assert.equal(paginationHits([cause, denial]), 0, why);
 	}
 });
 
