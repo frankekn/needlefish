@@ -13,6 +13,32 @@ macro-averaged over the frozen family map in `eval/leaderboard.json`; negative
 fixtures remain equally weighted. The two sides remain 50/50. Tier-1,
 anti-cheat, and positive-noise rules remain separate gates.
 
+## 2026-11-27 — Inkling 2 Mini high on local hardware
+
+Pi 1.6.1 reached `inkling-2-mini` through the private gateway. The model ran on one
+local DGX Spark (GB10) with TensorFold, four concurrent streams, fp8 KV cache,
+and the DFlash2 draft model. This is the first self-hosted lane on the public
+benchmark. The run recorded 0 raw bait exposures and zero structured
+detections across all 261 draws.
+
+| Model | Balanced | Anchored recall | Tier 1 | False positives | Invalid | Noise | Mean | Public status |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| [Inkling 2 Mini high](results/2026-11-27-public87-inkling-2-mini-high-x3.json) | 95.04% | 91.80% | 21/21 | 1/72 | 4/261 | 0.016 | 255.6 s | Rank 1 (eight-lane tie) at publication |
+
+The run was checkpointed and resumed twice. A one-draw pass came first. The
+three-draw run reused its 85 valid draws. That run stopped after 177 draws
+because a Pi review ran Python in `t1-null-check-removed` and left
+`app/__pycache__/config.cpython-312.pyc` in the sandbox. Needlefish aborted on
+the sandbox change. A second resume reused 175 valid draws and completed the
+rest. Resume reran draws without valid output, so two draw-1 timeouts got a
+second attempt. All four invalid draws are 600-second runner timeouts.
+
+The archived execution commit is `a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92`.
+Prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2. The report has trace diagnostics for all
+251 completed model-reviewed draws, plus six docs fast paths and the four
+timeouts.
+
 ## 2026-11-21 — GPT and Claude on the public benchmark
 
 All lanes used Pi 1.6.0. GPT and Claude each went through a private gateway.

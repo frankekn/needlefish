@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21",
+  "updated": "2026-11-28",
   "baseline": "results/2026-09-06-codex-gpt56-terra-xhigh-x3.json",
   "lanes": [
     {
@@ -175,6 +175,14 @@
       "name": "DeepSeek V4.1 Flash",
       "runner": "pi",
       "model": "deepseek-v4.1-flash",
+      "effort": "high",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-11-27-public87-inkling-2-mini-high-x3.json",
+      "name": "Inkling 2 Mini",
+      "runner": "pi",
+      "model": "inkling-2-mini",
       "effort": "high",
       "status": "Candidate"
     }
